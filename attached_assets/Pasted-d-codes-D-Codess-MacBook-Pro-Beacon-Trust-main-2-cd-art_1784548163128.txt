@@ -1,0 +1,114 @@
+d_codes@D-Codess-MacBook-Pro Beacon-Trust-main 2 % cd artifacts 
+d_codes@D-Codess-MacBook-Pro artifacts % cd beacon-trust 
+d_codes@D-Codess-MacBook-Pro beacon-trust % rm -rf node_modules
+
+d_codes@D-Codess-MacBook-Pro beacon-trust % npm install
+
+added 235 packages, and audited 238 packages in 2m
+
+21 packages are looking for funding
+  run `npm fund` for details
+
+1 low severity vulnerability
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
+
+Run `npm audit` for details.
+d_codes@D-Codess-MacBook-Pro beacon-trust % npm run dev
+
+> @workspace/beacon-trust@0.0.0 dev
+> vite --config vite.config.ts --host 0.0.0.0
+
+/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:121
+                throw new Error(
+                      ^
+
+Error: Cannot find module @rollup/rollup-darwin-x64. npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). Please try `npm i` again after removing both package-lock.json and node_modules directory.
+    at requireWithFriendlyError (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:121:9)
+    at Object.<anonymous> (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:130:76)
+    at Module._compile (node:internal/modules/cjs/loader:1688:14)
+    at Object..js (node:internal/modules/cjs/loader:1820:10)
+    at Module.load (node:internal/modules/cjs/loader:1423:32)
+    at Function._load (node:internal/modules/cjs/loader:1246:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+    at cjsLoader (node:internal/modules/esm/translators:268:5)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/translators:202:7) {
+  [cause]: Error: Cannot find module '@rollup/rollup-darwin-x64'
+  Require stack:
+  - /Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js
+      at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)
+      at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)
+      at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)
+      at Function._load (node:internal/modules/cjs/loader:1175:37)
+      at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+      at Module.require (node:internal/modules/cjs/loader:1445:12)
+      at require (node:internal/modules/helpers:135:16)
+      at requireWithFriendlyError (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:103:10)
+      at Object.<anonymous> (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:130:76) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [
+      '/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js'
+    ]
+  }
+}
+
+Node.js v22.18.0
+npm error Lifecycle script `dev` failed with error:
+npm error code 1
+npm error path /Users/d_codes/Downloads/Beacon-Trust-main 2/artifacts/beacon-trust
+npm error workspace @workspace/beacon-trust@0.0.0
+npm error location /Users/d_codes/Downloads/Beacon-Trust-main 2/artifacts/beacon-trust
+npm error command failed
+npm error command sh -c vite --config vite.config.ts --host 0.0.0.0
+d_codes@D-Codess-MacBook-Pro beacon-trust % npm run dev
+
+> @workspace/beacon-trust@0.0.0 dev
+> vite --config vite.config.ts --host 0.0.0.0
+
+/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:121
+                throw new Error(
+                      ^
+
+Error: Cannot find module @rollup/rollup-darwin-x64. npm has a bug related to optional dependencies (https://github.com/npm/cli/issues/4828). Please try `npm i` again after removing both package-lock.json and node_modules directory.
+    at requireWithFriendlyError (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:121:9)
+    at Object.<anonymous> (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:130:76)
+    at Module._compile (node:internal/modules/cjs/loader:1688:14)
+    at Object..js (node:internal/modules/cjs/loader:1820:10)
+    at Module.load (node:internal/modules/cjs/loader:1423:32)
+    at Function._load (node:internal/modules/cjs/loader:1246:12)
+    at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+    at cjsLoader (node:internal/modules/esm/translators:268:5)
+    at ModuleWrap.<anonymous> (node:internal/modules/esm/translators:202:7) {
+  [cause]: Error: Cannot find module '@rollup/rollup-darwin-x64'
+  Require stack:
+  - /Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js
+      at Function._resolveFilename (node:internal/modules/cjs/loader:1365:15)
+      at defaultResolveImpl (node:internal/modules/cjs/loader:1021:19)
+      at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1026:22)
+      at Function._load (node:internal/modules/cjs/loader:1175:37)
+      at TracingChannel.traceSync (node:diagnostics_channel:322:14)
+      at wrapModuleLoad (node:internal/modules/cjs/loader:235:24)
+      at Module.require (node:internal/modules/cjs/loader:1445:12)
+      at require (node:internal/modules/helpers:135:16)
+      at requireWithFriendlyError (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:103:10)
+      at Object.<anonymous> (/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js:130:76) {
+    code: 'MODULE_NOT_FOUND',
+    requireStack: [
+      '/Users/d_codes/Downloads/Beacon-Trust-main 2/node_modules/rollup/dist/native.js'
+    ]
+  }
+}
+
+Node.js v22.18.0
+npm error Lifecycle script `dev` failed with error:
+npm error code 1
+npm error path /Users/d_codes/Downloads/Beacon-Trust-main 2/artifacts/beacon-trust
+npm error workspace @workspace/beacon-trust@0.0.0
+npm error location /Users/d_codes/Downloads/Beacon-Trust-main 2/artifacts/beacon-trust
+npm error command failed
+npm error command sh -c vite --config vite.config.ts --host 0.0.0.0
+d_codes@D-Codess-MacBook-Pro beacon-trust % 

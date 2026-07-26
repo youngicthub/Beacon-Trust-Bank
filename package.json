@@ -1,0 +1,30 @@
+{
+  "name": "workspace",
+  "version": "0.0.0",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "artifacts/*",
+    "lib/*",
+    "lib/integrations/*",
+    "scripts"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @workspace/beacon-trust",
+    "dev:api": "npm run dev -w @workspace/api-server",
+    "build": "npm run build -w @workspace/beacon-trust",
+    "build:full": "npm run typecheck && npm run build -w @workspace/api-server && npm run build -w @workspace/beacon-trust",
+    "typecheck:libs": "tsc --build",
+    "typecheck": "npm run typecheck:libs && npm run typecheck -w @workspace/api-server && npm run typecheck -w @workspace/beacon-trust && npm run typecheck -w @workspace/scripts"
+  },
+  "overrides": {
+    "esbuild": "0.27.3",
+    "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^5.0.4",
+    "prettier": "^3.9.5",
+    "typescript": "~5.9.3",
+    "vite": "^7.3.2"
+  }
+}

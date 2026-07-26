@@ -1,0 +1,1 @@
+- [npm workspaces setup](yarn-migration.md) — project uses npm workspaces; vite must be in root devDependencies due to @vitejs/plugin-react hoisting quirk.

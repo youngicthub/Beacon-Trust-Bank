@@ -1,0 +1,28 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Navy background -->
+  <rect width="64" height="64" rx="12" fill="#02439A"/>
+
+  <!-- Lighthouse lantern cap (triangle roof) -->
+  <polygon points="32,7 23,17 41,17" fill="white"/>
+
+  <!-- Lantern room (glass box) -->
+  <rect x="24" y="17" width="16" height="7" rx="1.5" fill="white"/>
+  <!-- Lantern glow hint -->
+  <rect x="27" y="19" width="10" height="3" rx="1" fill="#7fb0ff" opacity="0.6"/>
+
+  <!-- Tower body (slight taper) -->
+  <path d="M26 24 L25 42 H39 L38 24 Z" fill="white"/>
+
+  <!-- Window stripe 1 -->
+  <rect x="29" y="27" width="6" height="2.5" rx="1" fill="#02439A" opacity="0.35"/>
+  <!-- Window stripe 2 -->
+  <rect x="29" y="32" width="6" height="2.5" rx="1" fill="#02439A" opacity="0.35"/>
+
+  <!-- Door arch -->
+  <path d="M29.5 42 L29.5 37 Q32 34 34.5 37 L34.5 42 Z" fill="#02439A" opacity="0.5"/>
+
+  <!-- Wave 1 (foreground) -->
+  <path d="M10 50 Q16 46 22 50 Q28 54 34 50 Q40 46 54 50" stroke="white" stroke-width="2.8" stroke-linecap="round" fill="none"/>
+  <!-- Wave 2 (background, fainter) -->
+  <path d="M8 57 Q16 53 24 57 Q32 61 40 57 Q48 53 57 57" stroke="white" stroke-width="2.2" stroke-linecap="round" fill="none" opacity="0.55"/>
+</svg>

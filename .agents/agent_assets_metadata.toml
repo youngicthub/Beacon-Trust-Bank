@@ -1,0 +1,14 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "PVVT89RIoEGQ-hNXnN_Pg"
+uri = "file://artifacts/beacon-trust/beacon-trust-dist.zip"
+type = "unspecified"
+title = "beacon-trust-dist.zip"
+
+[[outputs]]
+id = "iaE6Kh3_TvgPiokrFyQue"
+uri = "file://beacon-trust-dist.zip"
+type = "unspecified"
+title = "Beacon Trust — Production Build"
