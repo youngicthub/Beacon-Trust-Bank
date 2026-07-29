@@ -33,7 +33,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        target: `http://localhost:${process.env.API_PORT ?? '8080'}`,
         changeOrigin: true,
       },
     },

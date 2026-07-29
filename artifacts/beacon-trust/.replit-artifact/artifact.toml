@@ -16,7 +16,7 @@ run = "npm run dev -w @workspace/beacon-trust"
 [services.production]
 build = [ "npm", "run", "build", "--workspace=@workspace/beacon-trust" ]
 serve = "static"
-publicDir = "artifacts/beacon-trust/dist/public"
+publicDir = "artifacts/beacon-trust/dist"
 
 [[services.production.rewrites]]
 from = "/*"
