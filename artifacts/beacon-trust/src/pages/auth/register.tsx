@@ -3,7 +3,7 @@ import { useLocation, Link } from "wouter";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Shield, ArrowRight, Eye, EyeOff, MailCheck, Loader2 } from "@/lib/icons";
+import { Shield, ArrowRight, Eye, EyeOff } from "@/lib/icons";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +17,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { PublicLayout } from "@/components/layout/public-layout";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+import { saveToken } from "@/hooks/use-auth";
+import type { AuthUser } from "@/hooks/use-auth";
 
 
 const registerSchema = z
@@ -41,8 +43,6 @@ export default function Register() {
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
-  const [resending, setResending] = useState(false);
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -52,48 +52,20 @@ export default function Register() {
   const onSubmit = async (data: RegisterFormValues) => {
     setSubmitting(true);
     try {
-      const redirectUrl = `${window.location.origin}/auth/callback`;
-      const { data: result, error } = await supabase.auth.signUp({
-        email: data.email,
-        password: data.password,
-        options: {
-          emailRedirectTo: redirectUrl,
-          data: {
-            first_name: data.firstName,
-            last_name: data.lastName,
-            phone: data.phone,
-          },
-        },
-      });
-      if (error) throw error;
-
-      // Session returned → email confirmation is disabled; user is signed in.
-      if (result.session) {
-        toast({ title: "Account created", description: "You're signed in and ready to go." });
-        setLocation("/dashboard");
-        return;
-      }
-
-      // No session yet — try signing in immediately. Succeeds when the
-      // Supabase project has email confirmation disabled.
-      const { data: signInData } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+      const result = await apiFetch<{ token: string; user: AuthUser }>('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({
+          firstName: data.firstName,
+          lastName: data.lastName,
+          email: data.email,
+          password: data.password,
+          phone: data.phone || undefined,
+        }),
       });
 
-      if (signInData.session) {
-        toast({ title: "Account created", description: "You're signed in and ready to go." });
-        setLocation("/dashboard");
-        return;
-      }
-
-      // Email confirmation is enforced — ask the user to verify.
-      // The confirmation link in the email will redirect back to this app.
-      setPendingEmail(data.email);
-      toast({
-        title: "Verify your email",
-        description: `We sent a confirmation link to ${data.email}.`,
-      });
+      saveToken(result.token);
+      toast({ title: "Account created", description: "You're signed in and ready to go." });
+      setLocation("/dashboard");
     } catch (err: any) {
       toast({
         variant: "destructive",
@@ -104,62 +76,6 @@ export default function Register() {
       setSubmitting(false);
     }
   };
-
-  const handleResend = async () => {
-    if (!pendingEmail) return;
-    setResending(true);
-    try {
-      const { error } = await supabase.auth.resend({
-        type: "signup",
-        email: pendingEmail,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (error) throw error;
-      toast({ title: "Email resent", description: `A new link is on its way to ${pendingEmail}.` });
-    } catch (err: any) {
-      toast({ variant: "destructive", title: "Couldn't resend", description: err?.message ?? "Try again shortly." });
-    } finally {
-      setResending(false);
-    }
-  };
-
-
-  if (pendingEmail) {
-    return (
-      <PublicLayout>
-        <div className="flex-1 flex flex-col justify-center items-center px-4 sm:px-6 py-12 lg:py-24">
-          <div className="w-full max-w-md bg-card border border-border/50 rounded-xl shadow-xl p-8 sm:p-10 text-center">
-            <div className="bg-primary/10 p-3 rounded-xl mb-4 inline-flex">
-              <MailCheck className="h-8 w-8 text-primary" />
-            </div>
-            <h1 className="text-2xl font-serif font-bold text-foreground">Check your inbox</h1>
-            <p className="text-sm text-muted-foreground mt-3">
-              We sent a confirmation link to <span className="font-semibold text-foreground">{pendingEmail}</span>.
-              Click the link to activate your account and sign in.
-            </p>
-            <p className="text-xs text-muted-foreground mt-3">
-              Didn't receive it? Check your spam folder or resend below.
-            </p>
-            <div className="mt-6 flex flex-col gap-2">
-              <Button onClick={handleResend} disabled={resending} variant="outline" className="w-full">
-                {resending ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Resending…</>) : "Resend confirmation email"}
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full"
-                onClick={() => { setPendingEmail(null); form.reset(); }}
-              >
-                Use a different email
-              </Button>
-              <Link href="/login" className="text-sm text-primary hover:underline mt-2">
-                Back to sign in
-              </Link>
-            </div>
-          </div>
-        </div>
-      </PublicLayout>
-    );
-  }
 
   return (
     <PublicLayout>

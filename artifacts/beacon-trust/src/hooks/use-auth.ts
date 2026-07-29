@@ -1,89 +1,86 @@
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { Session } from "@supabase/supabase-js";
+import { useEffect, useState, useCallback } from 'react';
 
 export type AuthUser = {
   id: string;
   email: string;
   firstName: string | null;
   lastName: string | null;
-  role: "customer" | "staff" | "admin";
+  role: 'customer' | 'staff' | 'admin';
   phone: string | null;
   avatarUrl: string | null;
   isActive: boolean;
 };
 
-async function loadProfile(userId: string): Promise<AuthUser | null> {
-  const { data, error } = await supabase
-    .from("users")
-    .select("id,email,first_name,last_name,role,phone,avatar_url,is_active")
-    .eq("id", userId)
-    .maybeSingle();
-  if (error || !data) return null;
-  return {
-    id: data.id,
-    email: data.email,
-    firstName: data.first_name,
-    lastName: data.last_name,
-    role: data.role,
-    phone: data.phone,
-    avatarUrl: data.avatar_url,
-    isActive: data.is_active,
-  };
+const TOKEN_KEY = 'beacon_token';
+
+export function getToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
+export function saveToken(token: string): void {
+  localStorage.setItem(TOKEN_KEY, token);
+  window.dispatchEvent(new Event('storage'));
+}
+
+export function clearToken(): void {
+  localStorage.removeItem(TOKEN_KEY);
+  window.dispatchEvent(new Event('storage'));
 }
 
 export function useAuth() {
-  const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<AuthUser | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    let mounted = true;
-
-    // Register listener FIRST, then read initial session (recommended order).
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
-      setSession(s);
-      if (!s) {
+  const loadUser = useCallback(async () => {
+    const token = getToken();
+    if (!token) {
+      setUser(undefined);
+      setIsLoading(false);
+      return;
+    }
+    try {
+      const res = await fetch('/api/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) {
+        clearToken();
         setUser(undefined);
-        setIsLoading(false);
-        return;
+      } else {
+        const u: AuthUser = await res.json();
+        setUser(u);
       }
-      // Defer supabase call to avoid deadlock inside the callback
-      setTimeout(async () => {
-        const p = await loadProfile(s.user.id);
-        if (mounted) {
-          setUser(p ?? undefined);
-          setIsLoading(false);
-        }
-      }, 0);
-    });
-
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      if (!mounted) return;
-      setSession(s);
-      if (s) {
-        const p = await loadProfile(s.user.id);
-        if (mounted) setUser(p ?? undefined);
-      }
-      if (mounted) setIsLoading(false);
-    });
-
-    return () => {
-      mounted = false;
-      sub.subscription.unsubscribe();
-    };
+    } catch {
+      setUser(undefined);
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadUser();
+    const handler = () => loadUser();
+    window.addEventListener('storage', handler);
+    return () => window.removeEventListener('storage', handler);
+  }, [loadUser]);
 
   return {
     user,
-    session,
     isLoading,
     isError: false,
     error: undefined,
-    isAuthenticated: !!session && !!user,
+    isAuthenticated: !!user,
   };
 }
 
-export async function signOut() {
-  await supabase.auth.signOut();
+export async function signOut(): Promise<void> {
+  const token = getToken();
+  if (token) {
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    } catch { /* ignore */ }
+  }
+  clearToken();
 }

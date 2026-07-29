@@ -14,3 +14,8 @@ export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";
+
+export async function genAccountNumber(): Promise<string> {
+  const digits = Math.floor(1000000 + Math.random() * 9000000);
+  return `BT-${digits}`;
+}

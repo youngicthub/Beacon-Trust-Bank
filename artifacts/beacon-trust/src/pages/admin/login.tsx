@@ -12,7 +12,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { PublicLayout } from "@/components/layout/public-layout";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+import { saveToken } from "@/hooks/use-auth";
+import type { AuthUser } from "@/hooks/use-auth";
 
 const schema = z.object({
   email: z.string().email("Please enter a valid email address."),
@@ -34,23 +36,16 @@ export default function AdminLogin() {
   const onSubmit = async (data: Values) => {
     setSubmitting(true);
     try {
-      const { data: auth, error } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
+      const result = await apiFetch<{ token: string; user: AuthUser }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ identifier: data.email, password: data.password }),
       });
-      if (error || !auth.user) throw error ?? new Error("Sign-in failed");
 
-      const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", auth.user.id)
-        .maybeSingle();
-
-      if (profile?.role !== "admin") {
-        await supabase.auth.signOut();
+      if (result.user.role !== 'admin') {
         throw new Error("This account does not have admin access.");
       }
 
+      saveToken(result.token);
       toast({ title: "Welcome, Administrator", description: "Signed in successfully." });
       setLocation("/admin");
     } catch (err: any) {

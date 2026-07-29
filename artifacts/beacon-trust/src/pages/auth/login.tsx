@@ -17,7 +17,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { PublicLayout } from "@/components/layout/public-layout";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+import { saveToken } from "@/hooks/use-auth";
+import type { AuthUser } from "@/hooks/use-auth";
 
 const loginSchema = z.object({
   identifier: z.string().min(1, "Email or account number is required."),
@@ -25,35 +27,6 @@ const loginSchema = z.object({
 });
 
 type LoginFormValues = z.infer<typeof loginSchema>;
-
-/** Detect whether the input looks like an account number (no @ symbol). */
-function isAccountNumber(value: string) {
-  return !value.includes("@");
-}
-
-/** Given an account number, look up the user's email.
- *  Returns null if not found or the KYC is not yet approved. */
-async function resolveEmailFromAccountNumber(accountNumber: string): Promise<string> {
-  const { data, error } = await supabase
-    .from("accounts")
-    .select("user_id, users(email, kyc_records(status))")
-    .eq("account_number", accountNumber)
-    .maybeSingle();
-
-  if (error || !data) throw new Error("Account number not found.");
-
-  const user = (data as any).users;
-  const kycStatus = (user?.kyc_records as any[])?.[0]?.status;
-
-  if (kycStatus !== "verified") {
-    throw new Error("Your account has not been approved yet. Please contact support.");
-  }
-
-  const email = user?.email as string | undefined;
-  if (!email) throw new Error("Could not resolve account. Please use your email address.");
-
-  return email;
-}
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -69,28 +42,16 @@ export default function Login() {
   const onSubmit = async (data: LoginFormValues) => {
     setSubmitting(true);
     try {
-      let email = data.identifier.trim();
-
-      if (isAccountNumber(email)) {
-        email = await resolveEmailFromAccountNumber(email.toUpperCase());
-      }
-
-      const { data: auth, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: data.password,
+      const result = await apiFetch<{ token: string; user: AuthUser }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ identifier: data.identifier.trim(), password: data.password }),
       });
-      if (error || !auth.user) throw error ?? new Error("Sign-in failed");
 
-      // Fetch role from profile
-      const { data: profile } = await supabase
-        .from("users")
-        .select("role")
-        .eq("id", auth.user.id)
-        .maybeSingle();
+      saveToken(result.token);
 
       toast({ title: "Welcome back", description: "Successfully authenticated." });
 
-      const role = profile?.role;
+      const role = result.user.role;
       if (role === "admin") setLocation("/admin");
       else if (role === "staff") setLocation("/staff");
       else setLocation("/dashboard");
