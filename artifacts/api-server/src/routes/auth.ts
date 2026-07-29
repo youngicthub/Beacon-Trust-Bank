@@ -157,7 +157,7 @@ router.get(
   "/me",
   authenticate,
   (req: Request, res: Response): void => {
-    res.json({ user: toAuthUser(req.user!) });
+    res.json(toAuthUser(req.user!));
   },
 );
 
