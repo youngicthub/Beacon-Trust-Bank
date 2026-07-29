@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -16,8 +16,8 @@ import { ShieldCheck, Globe, Users, Clock, Loader2 } from '@/lib/icons';
 import { useLocation } from 'wouter';
 import { motion, AnimatePresence } from 'framer-motion';
 
-type AccountRow = { id: string; account_number: string; type: string; balance: number; currency: string };
-type BeneficiaryRow = { id: string; name: string; account_number: string; bank_name: string | null };
+type AccountRow = { id: string; accountNumber: string; type: string; balance: number; currency: string };
+type BeneficiaryRow = { id: string; name: string; accountNumber: string; bankName: string | null };
 
 const transferSchema = z
   .object({
@@ -79,16 +79,16 @@ export default function Transfer() {
   useEffect(() => {
     if (!user) return;
     setLoadingData(true);
-    const load = async () => {
-      const [accRes, benRes] = await Promise.all([
-        supabase.from('accounts').select('id, account_number, type, balance, currency').eq('user_id', user.id).eq('status', 'active'),
-        supabase.from('beneficiaries').select('id, name, account_number, bank_name').eq('user_id', user.id),
-      ]);
-      setAccounts((accRes.data ?? []) as AccountRow[]);
-      setBeneficiaries((benRes.data ?? []) as BeneficiaryRow[]);
-      setLoadingData(false);
-    };
-    load();
+    Promise.all([
+      apiFetch<{ accounts: (AccountRow & { status: string })[] }>('/api/accounts'),
+      apiFetch<{ beneficiaries: BeneficiaryRow[] }>('/api/beneficiaries'),
+    ])
+      .then(([accData, benData]) => {
+        setAccounts(accData.accounts.filter(a => a.status === 'active'));
+        setBeneficiaries(benData.beneficiaries);
+      })
+      .catch(console.error)
+      .finally(() => setLoadingData(false));
   }, [user?.id]);
 
   const form = useForm<TransferFormValues>({
@@ -115,16 +115,14 @@ export default function Transfer() {
     setStep(2);
   });
 
-  // Derive human-readable recipient info for the confirm screen
   const getRecipientSummary = (data: TransferFormValues) => {
     if (data.transfer_type === 'internal') {
       return { label: 'To Account', value: data.to_account_number ?? '—' };
     }
     if (data.transfer_type === 'external') {
       const ben = beneficiaries.find(b => b.id === data.beneficiary_id);
-      return { label: 'Beneficiary', value: ben ? `${ben.name} (${ben.account_number})` : '—' };
+      return { label: 'Beneficiary', value: ben ? `${ben.name} (${ben.accountNumber})` : '—' };
     }
-    // international
     return { label: 'Recipient', value: `${data.recipient_name ?? ''} — ${data.recipient_bank ?? ''} — ${data.swift_code ?? ''} — ${data.to_account_number ?? ''}` };
   };
 
@@ -141,30 +139,28 @@ export default function Transfer() {
       return;
     }
 
-    let recipientName = formData.recipient_name ?? '';
-    let recipientAccount = formData.to_account_number ?? '';
-
-    if (formData.transfer_type === 'external' && formData.beneficiary_id) {
-      const ben = beneficiaries.find(b => b.id === formData.beneficiary_id);
-      if (ben) { recipientName = ben.name; recipientAccount = ben.account_number; }
-    }
-
-    const { error } = await supabase.from('transactions').insert({
-      account_id: formData.from_account_id,
-      type: 'debit',
-      amount: formData.amount,
-      description: formData.description,
-      recipient_name: recipientName || null,
-      recipient_account: recipientAccount || null,
-      status: 'pending',
-    });
-
-    if (error) {
-      toast({ variant: 'destructive', title: 'Transfer Failed', description: error.message });
-    } else {
+    try {
+      await apiFetch('/api/transactions/transfer', {
+        method: 'POST',
+        body: JSON.stringify({
+          from_account_id: formData.from_account_id,
+          transfer_type: formData.transfer_type,
+          to_account_number: formData.to_account_number || undefined,
+          beneficiary_id: formData.beneficiary_id || undefined,
+          recipient_name: formData.recipient_name || undefined,
+          recipient_bank: formData.recipient_bank || undefined,
+          swift_code: formData.swift_code || undefined,
+          amount: formData.amount,
+          description: formData.description,
+        }),
+      });
       setStep(3);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Transfer failed';
+      toast({ variant: 'destructive', title: 'Transfer Failed', description: msg });
+    } finally {
+      setIsSubmitting(false);
     }
-    setIsSubmitting(false);
   };
 
   return (
@@ -206,7 +202,6 @@ export default function Transfer() {
                                 type="button"
                                 onClick={() => {
                                   form.setValue('transfer_type', opt.value as TransferFormValues['transfer_type'], { shouldValidate: false });
-                                  // Clear conditional fields when switching type
                                   form.setValue('to_account_number', '');
                                   form.setValue('beneficiary_id', '');
                                   form.setValue('recipient_name', '');
@@ -255,7 +250,7 @@ export default function Transfer() {
                                 ) : (
                                   accounts.map(a => (
                                     <SelectItem key={a.id} value={a.id}>
-                                      <span className="font-mono">{a.account_number}</span>
+                                      <span className="font-mono">{a.accountNumber}</span>
                                       <span className="ml-2 text-muted-foreground">— {fmt(a.balance, a.currency)}</span>
                                     </SelectItem>
                                   ))
@@ -306,7 +301,7 @@ export default function Transfer() {
                                   ) : (
                                     beneficiaries.map(b => (
                                       <SelectItem key={b.id} value={b.id}>
-                                        {b.name} — <span className="font-mono">{b.account_number}</span>
+                                        {b.name} — <span className="font-mono">{b.accountNumber}</span>
                                       </SelectItem>
                                     ))
                                   )}
@@ -415,7 +410,7 @@ export default function Transfer() {
                       const recipient = getRecipientSummary(formData);
                       const rows: [string, string][] = [
                         ['Type', TYPE_OPTIONS.find(t => t.value === formData.transfer_type)?.label ?? ''],
-                        ['From', fromAcc ? `${fromAcc.account_number} (${fmt(fromAcc.balance, fromAcc.currency)} available)` : '—'],
+                        ['From', fromAcc ? `${fromAcc.accountNumber} (${fmt(fromAcc.balance, fromAcc.currency)} available)` : '—'],
                         [recipient.label, recipient.value],
                         ['Amount', fmt(formData.amount)],
                         ['Description', formData.description],
@@ -429,7 +424,6 @@ export default function Transfer() {
                     })()}
                   </div>
 
-                  {/* Warn if amount exceeds balance */}
                   {(() => {
                     const fromAcc = accounts.find(a => a.id === formData.from_account_id);
                     if (fromAcc && formData.amount > fromAcc.balance) {

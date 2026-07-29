@@ -7,6 +7,7 @@ import transactionsRouter from "./transactions";
 import dashboardRouter from "./dashboard";
 import adminRouter from "./admin";
 import staffRouter from "./staff";
+import beneficiariesRouter from "./beneficiaries";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use("/transactions", transactionsRouter);
 router.use("/dashboard", dashboardRouter);
 router.use("/admin", adminRouter);
 router.use("/staff", staffRouter);
+router.use("/beneficiaries", beneficiariesRouter);
 
 export default router;

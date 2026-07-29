@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -18,7 +18,7 @@ type TxRow = {
   description: string | null;
   category: string | null;
   reference: string | null;
-  created_at: string;
+  createdAt: string;
 };
 
 export default function Transactions() {
@@ -33,28 +33,15 @@ export default function Transactions() {
     if (!user) return;
     const load = async () => {
       setIsLoading(true);
-      // Get user's account IDs first
-      const { data: accounts } = await supabase
-        .from('accounts')
-        .select('id')
-        .eq('user_id', user.id);
-      if (!accounts || accounts.length === 0) {
-        setTransactions([]);
+      try {
+        const data = await apiFetch<{ transactions: TxRow[] }>('/api/transactions');
+        setTransactions(data.transactions);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Failed to load transactions';
+        toast({ variant: 'destructive', title: 'Error', description: msg });
+      } finally {
         setIsLoading(false);
-        return;
       }
-      const accountIds = accounts.map(a => a.id);
-      const { data, error } = await supabase
-        .from('transactions')
-        .select('id, amount, type, status, description, category, reference, created_at')
-        .in('account_id', accountIds)
-        .order('created_at', { ascending: false });
-      if (error) {
-        toast({ variant: 'destructive', title: 'Error', description: error.message });
-      } else {
-        setTransactions((data ?? []) as TxRow[]);
-      }
-      setIsLoading(false);
     };
     load();
   }, [user?.id]);
@@ -117,7 +104,7 @@ export default function Transactions() {
                       <p className="font-bold text-base text-foreground mb-1">{tx.description || 'Transaction'}</p>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-mono text-muted-foreground">
                         <span className="bg-muted px-2 py-0.5 rounded text-foreground/80">
-                          {format(new Date(tx.created_at), 'MMM dd, yyyy HH:mm')}
+                          {format(new Date(tx.createdAt), 'MMM dd, yyyy HH:mm')}
                         </span>
                         {tx.category && <span className="uppercase tracking-wider">{tx.category}</span>}
                         {tx.reference && <span className="opacity-60">Ref: {tx.reference}</span>}

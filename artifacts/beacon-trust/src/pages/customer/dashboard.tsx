@@ -10,7 +10,7 @@ import { Link } from 'wouter';
 import { format } from 'date-fns';
 import { motion } from 'framer-motion';
 import { AreaChart, Area, ResponsiveContainer, Tooltip, XAxis } from 'recharts';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 
 const fadeUp = {
@@ -25,7 +25,7 @@ const sparkData = [
 
 type AccountRow = {
   id: string;
-  account_number: string;
+  accountNumber: string;
   type: string;
   balance: number | string;
 };
@@ -35,7 +35,7 @@ type TransactionRow = {
   amount: number | string;
   type: 'credit' | 'debit';
   status: string;
-  created_at: string;
+  createdAt: string;
 };
 
 type Summary = {
@@ -61,39 +61,8 @@ export default function CustomerDashboard() {
       setIsLoading(true);
       setIsError(false);
       try {
-        const [accountsRes, investRes, loansRes, cardsRes, txRes] = await Promise.all([
-          supabase.from('accounts').select('id,account_number,type,balance').eq('user_id', user.id),
-          supabase.from('investments').select('current_value').eq('user_id', user.id),
-          supabase.from('loans').select('outstanding_balance,status').eq('user_id', user.id),
-          supabase.from('cards').select('id,status').eq('user_id', user.id),
-          supabase
-            .from('transactions')
-            .select('id,description,amount,type,status,created_at,account_id,accounts!inner(user_id)')
-            .eq('accounts.user_id', user.id)
-            .order('created_at', { ascending: false })
-            .limit(6),
-        ]);
-
-        const accounts = (accountsRes.data ?? []) as AccountRow[];
-        const totalBalance = accounts.reduce((s, a) => s + Number(a.balance ?? 0), 0);
-        const investmentBalance = (investRes.data ?? []).reduce(
-          (s: number, i: any) => s + Number(i.current_value ?? 0),
-          0,
-        );
-        const loanOutstanding = (loansRes.data ?? [])
-          .filter((l: any) => l.status !== 'paid' && l.status !== 'rejected')
-          .reduce((s: number, l: any) => s + Number(l.outstanding_balance ?? 0), 0);
-        const cardCount = (cardsRes.data ?? []).filter((c: any) => c.status === 'active').length;
-
-        if (!mounted) return;
-        setSummary({
-          accounts,
-          totalBalance,
-          investmentBalance,
-          loanOutstanding,
-          cardCount,
-          recentTransactions: (txRes.data ?? []) as unknown as TransactionRow[],
-        });
+        const data = await apiFetch<Summary>('/api/dashboard/summary');
+        if (mounted) setSummary(data);
       } catch (e) {
         console.error('dashboard load failed', e);
         if (mounted) setIsError(true);
@@ -102,9 +71,7 @@ export default function CustomerDashboard() {
       }
     })();
 
-    return () => {
-      mounted = false;
-    };
+    return () => { mounted = false; };
   }, [user]);
 
   const formatCurrency = (amount: number | undefined) => {
@@ -235,7 +202,6 @@ export default function CustomerDashboard() {
 
         {/* Stat cards row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* custom index offset by 2 to account for greeting + hero card */}
           {[
             {
               label: 'Investment Portfolio',
@@ -315,7 +281,7 @@ export default function CustomerDashboard() {
                         <div>
                           <p className="font-medium text-sm text-foreground">{tx.description ?? 'Transaction'}</p>
                           <div className="flex items-center gap-2 mt-0.5">
-                            <span className="text-xs text-muted-foreground font-mono">{format(new Date(tx.created_at), 'MMM dd, yyyy')}</span>
+                            <span className="text-xs text-muted-foreground font-mono">{format(new Date(tx.createdAt), 'MMM dd, yyyy')}</span>
                             {tx.status === 'pending' && (
                               <span className="text-[10px] bg-amber-500/15 text-amber-600 px-1.5 py-0.5 rounded-full uppercase font-bold tracking-wider">Pending</span>
                             )}
@@ -386,7 +352,7 @@ export default function CustomerDashboard() {
                           </div>
                           <div>
                             <div className="font-medium text-sm capitalize">{account.type}</div>
-                            <div className="text-xs text-muted-foreground font-mono">****{account.account_number.slice(-4)}</div>
+                            <div className="text-xs text-muted-foreground font-mono">****{account.accountNumber.slice(-4)}</div>
                           </div>
                         </div>
                         <div className="font-mono font-semibold text-sm tabular-nums">{formatCurrency(Number(account.balance))}</div>

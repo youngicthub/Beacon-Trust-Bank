@@ -5,6 +5,32 @@ import { authenticate } from "../middleware/auth";
 
 const router: IRouter = Router();
 
+// POST /api/accounts — request a new account
+router.post("/", authenticate, async (req: Request, res: Response): Promise<void> => {
+  const { type, currency } = req.body as { type?: string; currency?: string };
+  if (!type || !currency) {
+    res.status(400).json({ error: "type and currency are required" });
+    return;
+  }
+  try {
+    const accountNumber = String(Math.floor(1000000000 + Math.random() * 8999999999));
+    const [account] = await db
+      .insert(accountsTable)
+      .values({
+        userId: req.user!.id,
+        accountNumber,
+        type: type as "savings" | "current" | "business" | "investment",
+        currency,
+        balance: "0",
+        status: "pending",
+      })
+      .returning();
+    res.status(201).json({ account });
+  } catch {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // GET /api/accounts
 router.get("/", authenticate, async (req: Request, res: Response): Promise<void> => {
   try {

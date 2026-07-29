@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -17,19 +17,19 @@ import { Badge } from '@/components/ui/badge';
 
 type CardRow = {
   id: string;
-  account_id: string;
+  accountId: string;
   type: string;
   status: string;
-  last_4: string;
-  cardholder_name: string;
-  expiry_month: number;
-  expiry_year: number;
+  last4: string;
+  cardholderName: string;
+  expiryMonth: number;
+  expiryYear: number;
   network: string | null;
 };
 
 type AccountRow = {
   id: string;
-  account_number: string;
+  accountNumber: string;
   type: string;
 };
 
@@ -55,56 +55,60 @@ export default function Cards() {
   const load = async () => {
     if (!user) return;
     setIsLoading(true);
-    const [cardsRes, accountsRes] = await Promise.all([
-      supabase.from('cards').select('id, account_id, type, status, last_4, cardholder_name, expiry_month, expiry_year, network').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('accounts').select('id, account_number, type').eq('user_id', user.id).eq('status', 'active'),
-    ]);
-    setCards((cardsRes.data ?? []) as CardRow[]);
-    setAccounts((accountsRes.data ?? []) as AccountRow[]);
-    setIsLoading(false);
+    try {
+      const [cardsData, accountsData] = await Promise.all([
+        apiFetch<{ cards: CardRow[] }>('/api/cards'),
+        apiFetch<{ accounts: AccountRow[] }>('/api/accounts'),
+      ]);
+      setCards(cardsData.cards);
+      setAccounts(accountsData.accounts.filter((a: AccountRow & { status?: string }) => (a as unknown as { status: string }).status === 'active'));
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to load';
+      toast({ variant: 'destructive', title: 'Error', description: msg });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, [user?.id]);
 
   const onSubmit = async (data: z.infer<typeof requestCardSchema>) => {
     if (!user) return;
-    const month = new Date().getMonth() + 1;
-    const year = new Date().getFullYear() + 3;
-    const last4 = String(Math.floor(1000 + Math.random() * 9000));
-    const { error } = await supabase.from('cards').insert({
-      user_id: user.id,
-      account_id: data.account_id,
-      type: data.type,
-      status: 'pending',
-      last_4: last4,
-      cardholder_name: `${user.firstName} ${user.lastName}`.trim() || 'CARDHOLDER',
-      expiry_month: month,
-      expiry_year: year,
-    });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await apiFetch('/api/cards', {
+        method: 'POST',
+        body: JSON.stringify({
+          account_id: data.account_id,
+          type: data.type,
+          cardholder_name: `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || 'CARDHOLDER',
+        }),
+      });
       setIsOpen(false);
       form.reset();
       toast({ title: 'Card Requested', description: 'Your new card request has been processed.' });
       load();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to request card';
+      toast({ variant: 'destructive', title: 'Error', description: msg });
     }
   };
 
   const toggleFreeze = async (card: CardRow) => {
     const isFrozen = card.status === 'frozen';
     setTogglingId(card.id);
-    const { error } = await supabase
-      .from('cards')
-      .update({ status: isFrozen ? 'active' : 'frozen' })
-      .eq('id', card.id);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to update card status.' });
-    } else {
+    try {
+      await apiFetch(`/api/cards/${card.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: isFrozen ? 'active' : 'frozen' }),
+      });
       setCards(prev => prev.map(c => c.id === card.id ? { ...c, status: isFrozen ? 'active' : 'frozen' } : c));
-      toast({ title: isFrozen ? 'Card Unfrozen' : 'Card Frozen', description: `Card ending in ${card.last_4} status updated.` });
+      toast({ title: isFrozen ? 'Card Unfrozen' : 'Card Frozen', description: `Card ending in ${card.last4} status updated.` });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to update card status.';
+      toast({ variant: 'destructive', title: 'Error', description: msg });
+    } finally {
+      setTogglingId(null);
     }
-    setTogglingId(null);
   };
 
   return (
@@ -136,7 +140,7 @@ export default function Cards() {
                         <SelectContent>
                           {accounts.map(a => (
                             <SelectItem key={a.id} value={a.id}>
-                              {a.account_number} ({a.type})
+                              {a.accountNumber} ({a.type})
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -193,14 +197,14 @@ export default function Cards() {
                   </div>
                   <div className="relative z-20">
                     <div className={`font-mono text-lg tracking-[0.2em] mb-2 ${card.status === 'frozen' ? 'text-muted-foreground' : 'text-white'}`}>
-                      •••• •••• •••• {card.last_4}
+                      •••• •••• •••• {card.last4}
                     </div>
                     <div className="flex justify-between items-end">
                       <div className={`uppercase tracking-widest text-sm ${card.status === 'frozen' ? 'text-muted-foreground' : 'text-white/70'}`}>
-                        {card.cardholder_name || 'Cardholder'}
+                        {card.cardholderName || 'Cardholder'}
                       </div>
                       <div className={`font-mono text-sm ${card.status === 'frozen' ? 'text-muted-foreground' : 'text-white/70'}`}>
-                        {String(card.expiry_month).padStart(2, '0')}/{String(card.expiry_year).slice(-2)}
+                        {String(card.expiryMonth).padStart(2, '0')}/{String(card.expiryYear).slice(-2)}
                       </div>
                     </div>
                   </div>

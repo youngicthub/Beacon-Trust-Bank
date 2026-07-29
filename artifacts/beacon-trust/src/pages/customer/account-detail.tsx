@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useParams, Link } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 
 type Account = {
   id: string;
-  account_number: string;
+  accountNumber: string;
   type: string;
   balance: number;
   currency: string;
@@ -28,8 +28,8 @@ type TxRow = {
   description: string | null;
   category: string | null;
   reference: string | null;
-  recipient_name: string | null;
-  created_at: string;
+  recipientName: string | null;
+  createdAt: string;
 };
 
 export default function AccountDetail() {
@@ -46,26 +46,16 @@ export default function AccountDetail() {
     if (!accountId || !user) return;
     const load = async () => {
       setLoading(true);
-      const [accRes, txRes] = await Promise.all([
-        supabase
-          .from('accounts')
-          .select('id, account_number, type, balance, currency, status')
-          .eq('id', accountId)
-          .eq('user_id', user.id)
-          .single(),
-        supabase
-          .from('transactions')
-          .select('id, amount, type, status, description, category, reference, recipient_name, created_at')
-          .eq('account_id', accountId)
-          .order('created_at', { ascending: false }),
-      ]);
-      if (accRes.error || !accRes.data) {
-        toast({ variant: 'destructive', title: 'Account not found' });
-      } else {
-        setAccount(accRes.data as Account);
+      try {
+        const data = await apiFetch<{ account: Account; transactions: TxRow[] }>(`/api/accounts/${accountId}`);
+        setAccount(data.account);
+        setTransactions(data.transactions);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : 'Account not found';
+        toast({ variant: 'destructive', title: 'Account not found', description: msg });
+      } finally {
+        setLoading(false);
       }
-      setTransactions((txRes.data ?? []) as TxRow[]);
-      setLoading(false);
     };
     load();
   }, [accountId, user?.id]);
@@ -77,12 +67,12 @@ export default function AccountDetail() {
     const csv = [
       'Date,Type,Description,Amount,Status',
       ...transactions.map(tx =>
-        `${format(new Date(tx.created_at), 'yyyy-MM-dd HH:mm')},${tx.type},${(tx.description || '').replace(/,/g, ' ')},${tx.amount},${tx.status}`
+        `${format(new Date(tx.createdAt), 'yyyy-MM-dd HH:mm')},${tx.type},${(tx.description || '').replace(/,/g, ' ')},${tx.amount},${tx.status}`
       ),
     ].join('\n');
     const el = document.createElement('a');
     el.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-    el.download = `statement_${account?.account_number}_${format(new Date(), 'yyyy-MM')}.csv`;
+    el.download = `statement_${account?.accountNumber}_${format(new Date(), 'yyyy-MM')}.csv`;
     document.body.appendChild(el);
     el.click();
     document.body.removeChild(el);
@@ -113,8 +103,8 @@ export default function AccountDetail() {
     );
   }
 
-  const totalInflow = transactions.filter(tx => tx.type === 'credit' && tx.status === 'completed').reduce((sum, tx) => sum + tx.amount, 0);
-  const totalOutflow = transactions.filter(tx => tx.type === 'debit' && tx.status === 'completed').reduce((sum, tx) => sum + tx.amount, 0);
+  const totalInflow = transactions.filter(tx => tx.type === 'credit' && tx.status === 'completed').reduce((sum, tx) => sum + Number(tx.amount), 0);
+  const totalOutflow = transactions.filter(tx => tx.type === 'debit' && tx.status === 'completed').reduce((sum, tx) => sum + Number(tx.amount), 0);
 
   return (
     <DashboardLayout>
@@ -136,13 +126,13 @@ export default function AccountDetail() {
                 </Badge>
               </div>
               <p className="font-mono text-muted-foreground tracking-widest bg-muted/50 inline-block px-3 py-1 rounded-md border border-border/50">
-                {account.account_number.replace(/(.{4})/g, '$1 ').trim()}
+                {account.accountNumber.replace(/(.{4})/g, '$1 ').trim()}
               </p>
             </div>
             <div className="text-left md:text-right">
               <p className="text-sm text-muted-foreground mb-1">Available Balance</p>
               <p className="text-4xl font-mono font-black tracking-tight">
-                {formatCurrency(account.balance, account.currency)}
+                {formatCurrency(Number(account.balance), account.currency)}
               </p>
             </div>
           </div>
@@ -178,14 +168,14 @@ export default function AccountDetail() {
                     <div>
                       <p className="font-medium text-sm text-foreground">{tx.description || 'Transaction'}</p>
                       <div className="flex items-center gap-2 mt-1 text-xs font-mono text-muted-foreground">
-                        <span>{format(new Date(tx.created_at), 'MMM dd, yyyy HH:mm')}</span>
+                        <span>{format(new Date(tx.createdAt), 'MMM dd, yyyy HH:mm')}</span>
                         {tx.reference && <><span>•</span><span>Ref: {tx.reference}</span></>}
                       </div>
                     </div>
                   </div>
                   <div className="text-right">
                     <div className={`font-mono font-bold ${tx.type === 'credit' ? 'text-emerald-500' : 'text-foreground'}`}>
-                      {tx.type === 'credit' ? '+' : '-'}{formatCurrency(tx.amount, account.currency)}
+                      {tx.type === 'credit' ? '+' : '-'}{formatCurrency(Number(tx.amount), account.currency)}
                     </div>
                     {tx.status === 'pending' && <span className="text-[10px] text-muted-foreground uppercase font-bold tracking-wider">Pending</span>}
                   </div>

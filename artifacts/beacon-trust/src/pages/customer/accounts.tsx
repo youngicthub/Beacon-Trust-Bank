@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -33,16 +33,12 @@ const CURRENCIES = ['USD', 'EUR', 'GBP', 'NGN', 'GHS', 'KES'];
 
 type Account = {
   id: string;
-  account_number: string;
+  accountNumber: string;
   type: string;
   balance: number;
   currency: string;
   status: string;
 };
-
-function randomAccountNumber() {
-  return String(Math.floor(1000000000 + Math.random() * 8999999999));
-}
 
 export default function Accounts() {
   const { user } = useAuth();
@@ -60,18 +56,16 @@ export default function Accounts() {
   const load = async () => {
     if (!user) return;
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from('accounts')
-      .select('id,account_number,type,balance,currency,status')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
+    try {
+      const data = await apiFetch<{ accounts: Account[] }>('/api/accounts');
+      setAccounts(data.accounts);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Failed to load accounts';
+      toast({ variant: 'destructive', title: 'Error', description: msg });
       setAccounts([]);
-    } else {
-      setAccounts((data ?? []) as Account[]);
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   };
 
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [user?.id]);
@@ -79,23 +73,21 @@ export default function Accounts() {
   const onSubmit = async (values: RequestFormValues) => {
     if (!user) return;
     setSubmitting(true);
-    const { error } = await supabase.from('accounts').insert({
-      user_id: user.id,
-      account_number: randomAccountNumber(),
-      type: values.type,
-      currency: values.currency,
-      balance: 0,
-      status: 'pending',
-    });
-    setSubmitting(false);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Request failed', description: error.message });
-      return;
+    try {
+      await apiFetch('/api/accounts', {
+        method: 'POST',
+        body: JSON.stringify({ type: values.type, currency: values.currency }),
+      });
+      setDialogOpen(false);
+      form.reset();
+      toast({ title: 'Account request submitted', description: 'An admin will review and activate it shortly.' });
+      load();
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : 'Request failed';
+      toast({ variant: 'destructive', title: 'Request failed', description: msg });
+    } finally {
+      setSubmitting(false);
     }
-    setDialogOpen(false);
-    form.reset();
-    toast({ title: 'Account request submitted', description: 'An admin will review and activate it shortly.' });
-    load();
   };
 
   const formatCurrency = (amount: number, currency: string) =>
@@ -156,7 +148,7 @@ export default function Accounts() {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className="text-sm font-mono text-muted-foreground tracking-widest">
-                          **** {account.account_number.slice(-4)}
+                          **** {account.accountNumber.slice(-4)}
                         </span>
                         <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
                       </div>
@@ -206,7 +198,7 @@ export default function Accounts() {
                   </CardHeader>
                   <CardContent>
                     <p className="text-xs text-muted-foreground mt-2">
-                      Account **** {account.account_number.slice(-4)} · Awaiting admin approval.
+                      Account **** {account.accountNumber.slice(-4)} · Awaiting admin approval.
                     </p>
                   </CardContent>
                 </Card>
@@ -234,7 +226,7 @@ export default function Accounts() {
                       {formatCurrency(account.balance, account.currency)}
                     </div>
                     <div className="text-xs font-mono text-muted-foreground tracking-widest mt-2">
-                      **** {account.account_number.slice(-4)}
+                      **** {account.accountNumber.slice(-4)}
                     </div>
                   </CardContent>
                 </Card>
