@@ -1,0 +1,149 @@
+Great. This is actually a better error. Your package manager is now working. The issue has moved to your workspace configuration.
+
+The error:
+
+[ERR_PNPM_FETCH_404] GET https://registry.npmjs.org/@workspace%2Fdb: Not Found
+
+means:
+
+api-server is trying to install @workspace/db from npm, but @workspace/db is supposed to be a local workspace package, not an npm package.
+
+Your monorepo has internal packages like:
+
+@workspace/api-server
+@workspace/db
+
+but pnpm is not seeing @workspace/db as a local package.
+
+Why this happened
+
+Your project probably has a structure like:
+
+Beacon-Trust-Bank/
+│
+├── package.json
+├── pnpm-workspace.yaml
+│
+└── artifacts/
+    ├── api-server/
+    │   └── package.json
+    │
+    ├── db/
+    │   └── package.json
+    │
+    └── beacon-trust/
+
+Inside:
+
+artifacts/api-server/package.json
+
+you likely have:
+
+{
+  "dependencies": {
+    "@workspace/db": "latest"
+  }
+}
+
+or:
+
+{
+  "dependencies": {
+    "@workspace/db": "*"
+  }
+}
+
+pnpm then tries npm registry.
+
+Fix 1 — Verify pnpm-workspace.yaml
+
+Your root pnpm-workspace.yaml must include all packages.
+
+Change it from:
+
+packages:
+  - "artifacts/*"
+
+to:
+
+packages:
+  - "artifacts/*"
+  - "packages/*"
+
+(if you have a packages folder)
+
+or better:
+
+packages:
+  - "**"
+
+This lets pnpm discover every workspace package.
+
+Fix 2 — Check @workspace/db package name
+
+Open:
+
+artifacts/db/package.json
+
+It should contain:
+
+{
+  "name": "@workspace/db"
+}
+
+Example:
+
+{
+  "name": "@workspace/db",
+  "version": "1.0.0"
+}
+
+If the name is different, pnpm cannot link it.
+
+Fix 3 — Change dependency to workspace protocol
+
+Open:
+
+artifacts/api-server/package.json
+
+Find:
+
+"@workspace/db": "latest"
+
+Change it to:
+
+"@workspace/db": "workspace:*"
+
+Example:
+
+{
+  "dependencies": {
+    "@workspace/db": "workspace:*"
+  }
+}
+
+This tells pnpm:
+
+Use the local package inside this repository, don't download from npm.
+
+Then commit:
+git add .
+git commit -m "Fix pnpm workspace package linking"
+git push
+
+Redeploy Render.
+
+Your progress so far:
+
+✅ Node version fixed
+✅ npm → pnpm fixed
+✅ workspace detection fixed
+⬜ Internal package linking (@workspace/db) ← current issue
+
+You are now at the actual monorepo configuration stage.
+
+If you paste your root folder structure:
+
+tree -L 3
+
+or a screenshot of the GitHub root, I can tell you the exact pnpm-workspace.yaml you need.
