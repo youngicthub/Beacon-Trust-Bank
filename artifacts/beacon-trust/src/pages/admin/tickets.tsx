@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -14,14 +14,16 @@ import { Textarea } from '@/components/ui/textarea';
 
 type Ticket = {
   id: string;
-  user_id: string;
+  userId: string;
   subject: string;
   description: string;
   status: string;
   priority: string;
-  staff_notes: string | null;
-  created_at: string;
-  user?: { first_name: string | null; last_name: string | null; email: string } | null;
+  staffNotes: string | null;
+  createdAt: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 const statusColor = (s: string) => ({
@@ -46,34 +48,34 @@ export default function AdminTickets() {
 
   const load = async () => {
     setLoading(true);
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .select('id,user_id,subject,description,status,priority,staff_notes,created_at')
-      .order('created_at', { ascending: false });
-    if (error) { toast({ variant: 'destructive', title: 'Error', description: error.message }); setLoading(false); return; }
-    const ids = Array.from(new Set((data ?? []).map(t => t.user_id)));
-    const userMap = new Map<string, Ticket['user']>();
-    if (ids.length) {
-      const { data: users } = await supabase.from('users').select('id,first_name,last_name,email').in('id', ids);
-      (users ?? []).forEach(u => userMap.set(u.id, { first_name: u.first_name, last_name: u.last_name, email: u.email }));
+    try {
+      const data = await apiFetch<Ticket[]>('/api/admin/tickets');
+      setTickets(data ?? []);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
     }
-    setTickets((data ?? []).map(t => ({ ...t, user: userMap.get(t.user_id) ?? null })) as Ticket[]);
     setLoading(false);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(); }, []);
 
-  const openModal = (t: Ticket) => { setActive(t); setStatus(t.status); setNotes(t.staff_notes || ''); };
+  const openModal = (t: Ticket) => { setActive(t); setStatus(t.status); setNotes(t.staffNotes || ''); };
 
   const save = async () => {
     if (!active) return;
     setSaving(true);
-    const { error } = await supabase.from('support_tickets').update({ status: status as 'open' | 'inProgress' | 'resolved' | 'closed', staff_notes: notes }).eq('id', active.id);
+    try {
+      await apiFetch(`/api/admin/tickets/${active.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status, staffNotes: notes }),
+      });
+      setActive(null);
+      toast({ title: 'Ticket updated' });
+      load();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
+    }
     setSaving(false);
-    if (error) { toast({ variant: 'destructive', title: 'Error', description: error.message }); return; }
-    setActive(null);
-    toast({ title: 'Ticket updated' });
-    load();
   };
 
   return (
@@ -101,15 +103,17 @@ export default function AdminTickets() {
                   <div className="flex flex-wrap items-center gap-3 mb-4 text-xs font-mono text-muted-foreground">
                     <span>TK-{t.id.slice(0, 8).toUpperCase()}</span>
                     <span>•</span>
-                    <span>{format(new Date(t.created_at), 'MMM dd, yyyy HH:mm')}</span>
+                    <span>{format(new Date(t.createdAt), 'MMM dd, yyyy HH:mm')}</span>
                     <span>•</span>
-                    <span className="text-primary">{t.user ? `${t.user.first_name ?? ''} ${t.user.last_name ?? ''} (${t.user.email})` : 'Unknown user'}</span>
+                    <span className="text-primary">
+                      {t.firstName || t.email ? `${t.firstName ?? ''} ${t.lastName ?? ''} (${t.email})` : 'Unknown user'}
+                    </span>
                   </div>
                   <p className="text-sm text-foreground/80 line-clamp-2">{t.description}</p>
                 </div>
                 <div className="bg-muted/10 p-5 md:w-64 flex flex-col justify-center shrink-0">
                   <div className="text-xs text-muted-foreground mb-3 font-medium uppercase tracking-wider">Staff Notes</div>
-                  <p className="text-sm italic line-clamp-3 mb-4">{t.staff_notes || 'No notes yet.'}</p>
+                  <p className="text-sm italic line-clamp-3 mb-4">{t.staffNotes || 'No notes yet.'}</p>
                   <Button variant="outline" className="w-full mt-auto" onClick={() => openModal(t)}>Manage Ticket</Button>
                 </div>
               </Card>

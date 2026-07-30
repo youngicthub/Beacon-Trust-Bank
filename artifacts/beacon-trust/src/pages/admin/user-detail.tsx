@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useParams, Link, useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -26,32 +26,32 @@ type FundFormValues = z.infer<typeof fundSchema>;
 type UserDetail = {
   id: string;
   email: string;
-  first_name: string | null;
-  last_name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   role: string;
   phone: string | null;
-  date_of_birth: string | null;
+  dateOfBirth: string | null;
   address: string | null;
-  is_active: boolean;
-  created_at: string;
+  isActive: boolean;
+  createdAt: string;
 };
 
 type AccountRow = {
   id: string;
-  account_number: string;
+  accountNumber: string;
   type: string;
-  balance: number;
+  balance: string;
   currency: string;
   status: string;
-  created_at: string;
+  createdAt: string;
 };
 
 type KycRow = {
   id: string;
   status: string;
-  document_type: string;
-  document_number: string;
-  created_at: string;
+  documentType: string;
+  documentNumber: string;
+  createdAt: string;
 } | null;
 
 export default function AdminUserDetail() {
@@ -63,8 +63,7 @@ export default function AdminUserDetail() {
   const [user, setUser] = useState<UserDetail | null>(null);
   const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [kyc, setKyc] = useState<KycRow>(null);
-  const [userLoading, setUserLoading] = useState(true);
-  const [accountsLoading, setAccountsLoading] = useState(true);
+  const [loading, setLoading] = useState(true);
   const [fundOpen, setFundOpen] = useState(false);
   const [fundLoading, setFundLoading] = useState(false);
   const [accountActionLoading, setAccountActionLoading] = useState<string | null>(null);
@@ -79,52 +78,29 @@ export default function AdminUserDetail() {
 
   useEffect(() => {
     if (!userId) return;
-    fetchUser();
-    fetchAccounts();
+    setLoading(true);
+    apiFetch<{ user: UserDetail; accounts: AccountRow[]; kyc: KycRow }>(`/api/admin/users/${userId}`)
+      .then(({ user: u, accounts: a, kyc: k }) => {
+        setUser(u);
+        setAccounts(a);
+        setKyc(k);
+      })
+      .catch((err: any) => toast({ variant: 'destructive', title: 'Error', description: err?.message }))
+      .finally(() => setLoading(false));
   }, [userId]);
-
-  const fetchUser = async () => {
-    setUserLoading(true);
-    const [userRes, kycRes] = await Promise.all([
-      supabase
-        .from('users')
-        .select('id, email, first_name, last_name, role, phone, date_of_birth, address, is_active, created_at')
-        .eq('id', userId)
-        .single(),
-      supabase
-        .from('kyc_records')
-        .select('id, status, document_type, document_number, created_at')
-        .eq('user_id', userId)
-        .maybeSingle(),
-    ]);
-    if (!userRes.error) setUser(userRes.data as UserDetail);
-    if (!kycRes.error) setKyc(kycRes.data as KycRow);
-    setUserLoading(false);
-  };
-
-  const fetchAccounts = async () => {
-    setAccountsLoading(true);
-    const { data, error } = await supabase
-      .from('accounts')
-      .select('id, account_number, type, balance, currency, status, created_at')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    if (!error) setAccounts((data ?? []) as AccountRow[]);
-    setAccountsLoading(false);
-  };
 
   const toggleUserStatus = async () => {
     if (!user) return;
     setUpdatingStatus(true);
-    const { error } = await supabase
-      .from('users')
-      .update({ is_active: !user.is_active })
-      .eq('id', userId);
-    if (error) {
+    try {
+      await apiFetch(`/api/admin/users/${userId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !user.isActive }),
+      });
+      setUser(prev => prev ? { ...prev, isActive: !prev.isActive } : null);
+      toast({ title: 'Updated', description: `User is now ${!user.isActive ? 'active' : 'inactive'}.` });
+    } catch (err: any) {
       toast({ variant: 'destructive', title: 'Error', description: 'Failed to update status.' });
-    } else {
-      setUser(prev => prev ? { ...prev, is_active: !prev.is_active } : null);
-      toast({ title: 'Updated', description: `User is now ${!user.is_active ? 'active' : 'inactive'}.` });
     }
     setUpdatingStatus(false);
   };
@@ -132,74 +108,45 @@ export default function AdminUserDetail() {
   const handleAccountAction = async (accountId: string, action: 'approve' | 'reject') => {
     setAccountActionLoading(accountId);
     const newStatus = action === 'approve' ? 'active' : 'closed';
-    const { error } = await supabase
-      .from('accounts')
-      .update({ status: newStatus })
-      .eq('id', accountId);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await apiFetch(`/api/admin/accounts/${accountId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus }),
+      });
       setAccounts(prev => prev.map(a => a.id === accountId ? { ...a, status: newStatus } : a));
       toast({
         title: action === 'approve' ? 'Account Approved' : 'Account Rejected',
-        description: action === 'approve'
-          ? 'The account is now active.'
-          : 'The account request has been declined.',
+        description: action === 'approve' ? 'The account is now active.' : 'The account request has been declined.',
       });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
     }
     setAccountActionLoading(null);
   };
 
   const onFundSubmit = async (data: FundFormValues) => {
-    // Find the primary active account
-    const primaryAccount = accounts.find(a => a.status === 'active');
-    if (!primaryAccount) {
-      toast({ variant: 'destructive', title: 'No Active Account', description: 'User has no active account to fund.' });
-      return;
-    }
     setFundLoading(true);
-    const newBalance = primaryAccount.balance + data.amount;
-    const { error: accErr } = await supabase
-      .from('accounts')
-      .update({ balance: newBalance })
-      .eq('id', primaryAccount.id);
-
-    if (accErr) {
-      toast({ variant: 'destructive', title: 'Error', description: accErr.message });
-      setFundLoading(false);
-      return;
+    try {
+      const result = await apiFetch<{ newBalance: number }>(`/api/admin/users/${userId}/fund`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: data.amount, note: data.note }),
+      });
+      // Refresh accounts to reflect new balance
+      const refreshed = await apiFetch<{ user: UserDetail; accounts: AccountRow[]; kyc: KycRow }>(`/api/admin/users/${userId}`);
+      setAccounts(refreshed.accounts);
+      toast({ title: 'Account Funded', description: `$${data.amount.toFixed(2)} added successfully.` });
+      setFundOpen(false);
+      fundForm.reset();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
     }
-
-    // Create a transaction record
-    await supabase.from('transactions').insert({
-      account_id: primaryAccount.id,
-      type: 'credit',
-      amount: data.amount,
-      description: data.note || 'Admin credit',
-      status: 'completed',
-    });
-
-    setAccounts(prev => prev.map(a => a.id === primaryAccount.id ? { ...a, balance: newBalance } : a));
-    toast({ title: 'Account Funded', description: `$${data.amount.toFixed(2)} added successfully.` });
-    setFundOpen(false);
-    fundForm.reset();
     setFundLoading(false);
   };
 
   const handleDeleteUser = async () => {
     setDeleteLoading(true);
     try {
-      // cascade: transactions → accounts → other records → user
-      const accountIds = accounts.map(a => a.id);
-      if (accountIds.length > 0) {
-        await supabase.from('transactions').delete().in('account_id', accountIds);
-        await supabase.from('accounts').delete().in('id', accountIds);
-      }
-      await supabase.from('kyc_records').delete().eq('user_id', userId);
-      await supabase.from('beneficiaries').delete().eq('user_id', userId);
-      await supabase.from('support_tickets').delete().eq('user_id', userId);
-      const { error } = await supabase.from('users').delete().eq('id', userId);
-      if (error) throw error;
+      await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
       toast({ title: 'Customer Deleted', description: 'Customer and all associated data have been permanently removed.' });
       setLocation('/admin/users');
     } catch (err: any) {
@@ -209,12 +156,12 @@ export default function AdminUserDetail() {
     }
   };
 
-  const formatCurrency = (amount: number, currency = 'USD') =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount);
+  const formatCurrency = (amount: string | number, currency = 'USD') =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(Number(amount));
 
   const getAccountStatusIcon = (status: string) => {
     if (status === 'active') return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-    if (status === 'pending' || status === 'pending_approval') return <Clock className="h-4 w-4 text-amber-500" />;
+    if (status === 'pending') return <Clock className="h-4 w-4 text-amber-500" />;
     return <XCircle className="h-4 w-4 text-destructive" />;
   };
 
@@ -229,7 +176,7 @@ export default function AdminUserDetail() {
           </Link>
         </div>
 
-        {userLoading ? (
+        {loading ? (
           <div className="space-y-4">
             <Skeleton className="h-32 rounded-xl" />
             <Skeleton className="h-48 rounded-xl" />
@@ -241,9 +188,8 @@ export default function AdminUserDetail() {
           </div>
         ) : (
           <>
-            {/* User Profile Card */}
             <Card className="border-border/50 shadow-sm overflow-hidden">
-              <div className={`h-1.5 w-full ${user.is_active ? 'bg-primary' : 'bg-destructive'}`} />
+              <div className={`h-1.5 w-full ${user.isActive ? 'bg-primary' : 'bg-destructive'}`} />
               <CardContent className="p-6">
                 <div className="flex flex-col sm:flex-row justify-between gap-4">
                   <div className="flex items-start gap-4">
@@ -251,13 +197,11 @@ export default function AdminUserDetail() {
                       <UserIcon className="h-6 w-6 text-primary" />
                     </div>
                     <div>
-                      <h1 className="text-2xl font-serif font-bold">
-                        {user.first_name} {user.last_name}
-                      </h1>
+                      <h1 className="text-2xl font-serif font-bold">{user.firstName} {user.lastName}</h1>
                       <div className="flex flex-wrap items-center gap-2 mt-1">
                         <Badge variant="outline" className="uppercase text-[10px] tracking-wider">{user.role}</Badge>
-                        <Badge variant={user.is_active ? 'default' : 'destructive'} className="text-[10px]">
-                          {user.is_active ? 'Active' : 'Suspended'}
+                        <Badge variant={user.isActive ? 'default' : 'destructive'} className="text-[10px]">
+                          {user.isActive ? 'Active' : 'Suspended'}
                         </Badge>
                         {kyc?.status === 'verified' && (
                           <div className="flex items-center gap-1 text-emerald-600 text-xs">
@@ -269,61 +213,50 @@ export default function AdminUserDetail() {
                   </div>
                   <div className="flex gap-2 shrink-0">
                     <div className="flex items-center gap-2">
-                      <Switch
-                        checked={user.is_active}
-                        onCheckedChange={toggleUserStatus}
-                        disabled={updatingStatus}
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {user.is_active ? 'Active' : 'Suspended'}
-                      </span>
+                      <Switch checked={user.isActive} onCheckedChange={toggleUserStatus} disabled={updatingStatus} />
+                      <span className="text-xs text-muted-foreground">{user.isActive ? 'Active' : 'Suspended'}</span>
                     </div>
                     <Button onClick={() => setFundOpen(true)} size="sm">
                       <DollarSign className="mr-1.5 h-4 w-4" /> Fund Account
                     </Button>
                     <Button
-                      variant="outline"
-                      size="sm"
+                      variant="outline" size="sm"
                       onClick={() => setDeleteOpen(true)}
                       className="border-destructive/40 text-destructive hover:bg-destructive/10 hover:border-destructive"
                     >
-                      <Trash2 className="mr-1.5 h-4 w-4" /> Delete Customer
+                      <Trash2 className="mr-1.5 h-4 w-4" /> Delete
                     </Button>
                   </div>
                 </div>
 
                 <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                   <div className="flex items-center gap-2 text-muted-foreground">
-                    <Mail className="h-4 w-4 shrink-0" />
-                    <span>{user.email}</span>
+                    <Mail className="h-4 w-4 shrink-0" /><span>{user.email}</span>
                   </div>
                   {user.phone && (
                     <div className="flex items-center gap-2 text-muted-foreground">
-                      <Phone className="h-4 w-4 shrink-0" />
-                      <span>{user.phone}</span>
+                      <Phone className="h-4 w-4 shrink-0" /><span>{user.phone}</span>
                     </div>
                   )}
-                  {user.date_of_birth && (
+                  {user.dateOfBirth && (
                     <div className="flex items-center gap-2 text-muted-foreground">
                       <Calendar className="h-4 w-4 shrink-0" />
-                      <span>Born {format(new Date(user.date_of_birth), 'MMMM d, yyyy')}</span>
+                      <span>Born {format(new Date(user.dateOfBirth), 'MMMM d, yyyy')}</span>
                     </div>
                   )}
                   {user.address && (
                     <div className="flex items-center gap-2 text-muted-foreground">
-                      <MapPin className="h-4 w-4 shrink-0" />
-                      <span>{user.address}</span>
+                      <MapPin className="h-4 w-4 shrink-0" /><span>{user.address}</span>
                     </div>
                   )}
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <Calendar className="h-4 w-4 shrink-0" />
-                    <span>Joined {format(new Date(user.created_at), 'MMMM d, yyyy')}</span>
+                    <span>Joined {format(new Date(user.createdAt), 'MMMM d, yyyy')}</span>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* KYC Status */}
             {kyc && (
               <Card className="border-border/50 shadow-sm">
                 <CardHeader className="pb-3">
@@ -334,22 +267,19 @@ export default function AdminUserDetail() {
                 <CardContent>
                   <div className="flex items-center justify-between">
                     <div className="text-sm text-muted-foreground">
-                      <span className="font-medium capitalize">{kyc.document_type}</span> — {kyc.document_number}
+                      <span className="font-medium capitalize">{kyc.documentType}</span> — {kyc.documentNumber}
                     </div>
-                    <Badge
-                      variant={kyc.status === 'verified' ? 'default' : kyc.status === 'rejected' ? 'destructive' : 'secondary'}
-                    >
+                    <Badge variant={kyc.status === 'verified' ? 'default' : kyc.status === 'rejected' ? 'destructive' : 'secondary'}>
                       {kyc.status}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-2">
-                    Submitted {format(new Date(kyc.created_at), 'MMM d, yyyy')}
+                    Submitted {format(new Date(kyc.createdAt), 'MMM d, yyyy')}
                   </p>
                 </CardContent>
               </Card>
             )}
 
-            {/* Accounts */}
             <Card className="border-border/50 shadow-sm">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base flex items-center gap-2">
@@ -357,59 +287,41 @@ export default function AdminUserDetail() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {accountsLoading ? (
-                  <div className="space-y-3">
-                    <Skeleton className="h-16 rounded-lg" />
-                    <Skeleton className="h-16 rounded-lg" />
-                  </div>
-                ) : accounts.length === 0 ? (
+                {accounts.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">No accounts found.</p>
                 ) : (
                   <div className="space-y-3">
                     {accounts.map(account => (
-                      <div
-                        key={account.id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border/50 bg-background/50"
-                      >
+                      <div key={account.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 rounded-xl border border-border/50 bg-background/50">
                         <div className="flex items-center gap-3">
                           <div className="bg-primary/10 p-2 rounded-lg">
                             <CreditCard className="h-4 w-4 text-primary" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-mono text-sm font-medium">{account.account_number}</span>
+                              <span className="font-mono text-sm font-medium">{account.accountNumber}</span>
                               <Badge variant="outline" className="text-[10px] uppercase">{account.type}</Badge>
                             </div>
                             <div className="flex items-center gap-1.5 mt-0.5">
                               {getAccountStatusIcon(account.status)}
-                              <span className="text-xs text-muted-foreground capitalize">
-                                {account.status.replace('_', ' ')}
-                              </span>
+                              <span className="text-xs text-muted-foreground capitalize">{account.status}</span>
                             </div>
                           </div>
                         </div>
-
                         <div className="flex items-center gap-3">
-                          <span className="font-mono font-bold text-lg">
-                            {formatCurrency(account.balance, account.currency)}
-                          </span>
-                          {(account.status === 'pending' || account.status === 'pending_approval') && (
+                          <span className="font-mono font-bold text-lg">{formatCurrency(account.balance, account.currency)}</span>
+                          {account.status === 'pending' && (
                             <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
+                              <Button variant="outline" size="sm"
                                 onClick={() => handleAccountAction(account.id, 'reject')}
                                 disabled={accountActionLoading === account.id}
-                                className="border-destructive/30 text-destructive hover:bg-destructive/10"
-                              >
+                                className="border-destructive/30 text-destructive hover:bg-destructive/10">
                                 <XCircle className="mr-1.5 h-3.5 w-3.5" /> Reject
                               </Button>
-                              <Button
-                                size="sm"
+                              <Button size="sm"
                                 onClick={() => handleAccountAction(account.id, 'approve')}
                                 disabled={accountActionLoading === account.id}
-                                className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                              >
+                                className="bg-emerald-600 hover:bg-emerald-700 text-white">
                                 <CheckCircle2 className="mr-1.5 h-3.5 w-3.5" /> Approve
                               </Button>
                             </div>
@@ -422,7 +334,6 @@ export default function AdminUserDetail() {
               </CardContent>
             </Card>
 
-            {/* Quick Actions */}
             <div className="flex flex-wrap gap-3">
               <Link href={`/admin/transactions?userId=${userId}`}>
                 <Button variant="outline" size="sm">View Transactions</Button>
@@ -432,7 +343,6 @@ export default function AdminUserDetail() {
         )}
       </div>
 
-      {/* Delete Customer Dialog */}
       <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
         <DialogContent>
           <DialogHeader>
@@ -440,24 +350,16 @@ export default function AdminUserDetail() {
               <Trash2 className="h-5 w-5" /> Delete Customer
             </DialogTitle>
             <DialogDescription>
-              This will permanently delete <strong>{user?.first_name} {user?.last_name}</strong> and all
+              This will permanently delete <strong>{user?.firstName} {user?.lastName}</strong> and all
               associated accounts, transactions, KYC records, and support tickets. This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <div className="flex gap-3 pt-2">
-            <Button variant="outline" className="flex-1" onClick={() => setDeleteOpen(false)} disabled={deleteLoading}>
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              className="flex-1"
-              onClick={handleDeleteUser}
-              disabled={deleteLoading}
-            >
+            <Button variant="outline" className="flex-1" onClick={() => setDeleteOpen(false)} disabled={deleteLoading}>Cancel</Button>
+            <Button variant="destructive" className="flex-1" onClick={handleDeleteUser} disabled={deleteLoading}>
               {deleteLoading ? (
                 <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  Deleting...
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Deleting...
                 </span>
               ) : 'Yes, Delete Permanently'}
             </Button>
@@ -465,7 +367,6 @@ export default function AdminUserDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Fund Account Dialog */}
       <Dialog open={fundOpen} onOpenChange={setFundOpen}>
         <DialogContent>
           <DialogHeader>
@@ -473,7 +374,7 @@ export default function AdminUserDetail() {
               <DollarSign className="h-5 w-5 text-primary" /> Fund Account
             </DialogTitle>
             <DialogDescription>
-              Add funds to {user?.first_name} {user?.last_name}'s primary account.
+              Add funds to {user?.firstName} {user?.lastName}'s primary active account.
             </DialogDescription>
           </DialogHeader>
           <Form {...fundForm}>
@@ -493,21 +394,16 @@ export default function AdminUserDetail() {
               <FormField control={fundForm.control} name="note" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Note (optional)</FormLabel>
-                  <FormControl>
-                    <Input {...field} placeholder="e.g. Initial deposit, bonus credit..." />
-                  </FormControl>
+                  <FormControl><Input {...field} placeholder="e.g. Initial deposit, bonus credit..." /></FormControl>
                   <FormMessage />
                 </FormItem>
               )} />
               <div className="flex gap-3 pt-2">
-                <Button type="button" variant="outline" className="flex-1" onClick={() => setFundOpen(false)} disabled={fundLoading}>
-                  Cancel
-                </Button>
+                <Button type="button" variant="outline" className="flex-1" onClick={() => setFundOpen(false)} disabled={fundLoading}>Cancel</Button>
                 <Button type="submit" className="flex-1" disabled={fundLoading}>
                   {fundLoading ? (
                     <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Processing...
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Processing...
                     </span>
                   ) : 'Confirm Funding'}
                 </Button>

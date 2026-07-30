@@ -91,6 +91,53 @@ router.post("/login", async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// POST /api/auth/admin-register
+router.post("/admin-register", async (req: Request, res: Response): Promise<void> => {
+  const { firstName, lastName, email, phone, password, adminToken } = req.body as {
+    firstName?: string; lastName?: string; email?: string; phone?: string;
+    password?: string; adminToken?: string;
+  };
+
+  const code = process.env.ADMIN_REGISTRATION_CODE ?? "BEACON-ADMIN-2024";
+  if (!adminToken || adminToken !== code) {
+    res.status(403).json({ error: "Invalid access code" });
+    return;
+  }
+
+  if (!email || !password) {
+    res.status(400).json({ error: "email and password are required" });
+    return;
+  }
+
+  try {
+    const existing = await db.query.usersTable.findFirst({
+      where: eq(usersTable.email, email.toLowerCase()),
+    });
+    if (existing) {
+      res.status(409).json({ error: "Email already in use" });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, 12);
+    const [user] = await db.insert(usersTable).values({
+      email: email.toLowerCase(),
+      firstName: firstName ?? null,
+      lastName: lastName ?? null,
+      phone: phone ?? null,
+      passwordHash,
+      role: "admin",
+      isActive: true,
+    }).returning();
+
+    if (!user) { res.status(500).json({ error: "Failed to create admin user" }); return; }
+
+    const token = signToken({ sub: user.id, email: user.email, role: "admin" });
+    res.status(201).json({ token, user: toAuthUser(user) });
+  } catch {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // POST /api/auth/register
 router.post(
   "/register",

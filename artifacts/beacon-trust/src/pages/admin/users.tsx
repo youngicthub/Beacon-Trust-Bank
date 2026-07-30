@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Input } from '@/components/ui/input';
@@ -16,12 +16,12 @@ import { useToast } from '@/hooks/use-toast';
 type UserRow = {
   id: string;
   email: string;
-  first_name: string | null;
-  last_name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   role: string;
-  is_active: boolean;
-  created_at: string;
-  kyc_records: { status: string } | null;
+  isActive: boolean;
+  createdAt: string;
+  kycStatus: string | null;
 };
 
 export default function AdminUsers() {
@@ -39,28 +39,16 @@ export default function AdminUsers() {
     return () => clearTimeout(handler);
   }, [search]);
 
-  useEffect(() => {
-    fetchUsers();
-  }, [debouncedSearch]);
+  useEffect(() => { fetchUsers(); }, [debouncedSearch]);
 
   const fetchUsers = async () => {
     setIsLoading(true);
-    let query = supabase
-      .from('users')
-      .select('id, email, first_name, last_name, role, is_active, created_at, kyc_records(status)')
-      .order('created_at', { ascending: false });
-
-    if (debouncedSearch) {
-      query = query.or(
-        `email.ilike.%${debouncedSearch}%,first_name.ilike.%${debouncedSearch}%,last_name.ilike.%${debouncedSearch}%`
-      );
-    }
-
-    const { data, error } = await query;
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
-      setUsers((data as any[]) ?? []);
+    try {
+      const params = debouncedSearch ? `?q=${encodeURIComponent(debouncedSearch)}` : '';
+      const data = await apiFetch<UserRow[]>(`/api/admin/users${params}`);
+      setUsers(data ?? []);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'Failed to load users.' });
     }
     setIsLoading(false);
   };
@@ -68,20 +56,9 @@ export default function AdminUsers() {
   const handleDeleteUser = async (targetUser: UserRow) => {
     setDeleteLoading(true);
     try {
-      // fetch accounts so we can cascade-delete transactions first
-      const { data: accs } = await supabase.from('accounts').select('id').eq('user_id', targetUser.id);
-      const accountIds = (accs ?? []).map((a: any) => a.id);
-      if (accountIds.length > 0) {
-        await supabase.from('transactions').delete().in('account_id', accountIds);
-        await supabase.from('accounts').delete().in('id', accountIds);
-      }
-      await supabase.from('kyc_records').delete().eq('user_id', targetUser.id);
-      await supabase.from('beneficiaries').delete().eq('user_id', targetUser.id);
-      await supabase.from('support_tickets').delete().eq('user_id', targetUser.id);
-      const { error } = await supabase.from('users').delete().eq('id', targetUser.id);
-      if (error) throw error;
+      await apiFetch(`/api/admin/users/${targetUser.id}`, { method: 'DELETE' });
       setUsers(prev => prev.filter(u => u.id !== targetUser.id));
-      toast({ title: 'Customer Deleted', description: `${targetUser.first_name} ${targetUser.last_name} has been permanently removed.` });
+      toast({ title: 'Customer Deleted', description: `${targetUser.firstName} ${targetUser.lastName} has been permanently removed.` });
     } catch (err: any) {
       toast({ variant: 'destructive', title: 'Delete Failed', description: err?.message ?? 'Unable to delete customer.' });
     }
@@ -91,16 +68,15 @@ export default function AdminUsers() {
 
   const toggleStatus = async (userId: string, currentStatus: boolean) => {
     setUpdatingId(userId);
-    const { error } = await supabase
-      .from('users')
-      .update({ is_active: !currentStatus })
-      .eq('id', userId);
-
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to update user.' });
-    } else {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_active: !currentStatus } : u));
+    try {
+      await apiFetch(`/api/admin/users/${userId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !currentStatus }),
+      });
+      setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive: !currentStatus } : u));
       toast({ title: 'User Updated', description: `User is now ${!currentStatus ? 'active' : 'inactive'}.` });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to update user.' });
     }
     setUpdatingId(null);
   };
@@ -140,65 +116,62 @@ export default function AdminUsers() {
           </div>
         ) : users.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {users.map((user) => {
-              const kycStatus = (user.kyc_records as any)?.status ?? null;
-              return (
-                <Card key={user.id} className="border-border/50 shadow-sm flex flex-col group overflow-hidden">
-                  <div className={`h-1.5 w-full ${user.is_active === false ? 'bg-destructive' : user.role === 'staff' ? 'bg-accent' : 'bg-primary'}`} />
-                  <div className="p-6 flex-1 flex flex-col">
-                    <div className="flex justify-between items-start mb-4">
-                      <div>
-                        <Link href={`/admin/users/${user.id}`} className="font-bold text-lg hover:text-primary transition-colors inline-block">
-                          {user.first_name} {user.last_name}
-                        </Link>
-                        <div className="flex items-center gap-2 mt-1">
-                          <Badge variant="outline" className="uppercase text-[10px] tracking-wider">{user.role}</Badge>
-                          {kycStatus === 'verified' && <ShieldCheck className="h-4 w-4 text-emerald-500" />}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2 mt-auto text-sm text-muted-foreground mb-6">
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-4 w-4 shrink-0" />
-                        <span className="truncate">{user.email}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Calendar className="h-4 w-4 shrink-0" />
-                        <span>Joined {format(new Date(user.created_at), 'MMM yyyy')}</span>
-                      </div>
-                    </div>
-
-                    <div className="pt-4 border-t border-border/50 flex justify-between items-center mt-auto">
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={user.is_active}
-                          onCheckedChange={() => toggleStatus(user.id, user.is_active)}
-                          disabled={updatingId === user.id}
-                        />
-                        <span className="text-xs font-medium uppercase tracking-wider">
-                          {user.is_active ? 'Active' : 'Suspended'}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setDeleteTarget(user)}
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                          title="Delete customer"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                        <Link href={`/admin/users/${user.id}`}>
-                          <Button variant="ghost" size="sm">Details</Button>
-                        </Link>
+            {users.map((user) => (
+              <Card key={user.id} className="border-border/50 shadow-sm flex flex-col group overflow-hidden">
+                <div className={`h-1.5 w-full ${!user.isActive ? 'bg-destructive' : user.role === 'staff' ? 'bg-accent' : 'bg-primary'}`} />
+                <div className="p-6 flex-1 flex flex-col">
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <Link href={`/admin/users/${user.id}`} className="font-bold text-lg hover:text-primary transition-colors inline-block">
+                        {user.firstName} {user.lastName}
+                      </Link>
+                      <div className="flex items-center gap-2 mt-1">
+                        <Badge variant="outline" className="uppercase text-[10px] tracking-wider">{user.role}</Badge>
+                        {user.kycStatus === 'verified' && <ShieldCheck className="h-4 w-4 text-emerald-500" />}
                       </div>
                     </div>
                   </div>
-                </Card>
-              );
-            })}
+
+                  <div className="space-y-2 mt-auto text-sm text-muted-foreground mb-6">
+                    <div className="flex items-center gap-2">
+                      <Mail className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{user.email}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 shrink-0" />
+                      <span>Joined {format(new Date(user.createdAt), 'MMM yyyy')}</span>
+                    </div>
+                  </div>
+
+                  <div className="pt-4 border-t border-border/50 flex justify-between items-center mt-auto">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={user.isActive}
+                        onCheckedChange={() => toggleStatus(user.id, user.isActive)}
+                        disabled={updatingId === user.id}
+                      />
+                      <span className="text-xs font-medium uppercase tracking-wider">
+                        {user.isActive ? 'Active' : 'Suspended'}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeleteTarget(user)}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                        title="Delete customer"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                      <Link href={`/admin/users/${user.id}`}>
+                        <Button variant="ghost" size="sm">Details</Button>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </Card>
+            ))}
           </div>
         ) : (
           <div className="p-16 text-center border border-border/50 rounded-xl bg-card">
@@ -209,7 +182,6 @@ export default function AdminUsers() {
         )}
       </div>
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
         <DialogContent>
           <DialogHeader>
@@ -218,7 +190,7 @@ export default function AdminUsers() {
             </DialogTitle>
             <DialogDescription>
               This will permanently delete{' '}
-              <strong>{deleteTarget?.first_name} {deleteTarget?.last_name}</strong> and all
+              <strong>{deleteTarget?.firstName} {deleteTarget?.lastName}</strong> and all
               associated accounts, transactions, KYC records, and support tickets.
               This action cannot be undone.
             </DialogDescription>

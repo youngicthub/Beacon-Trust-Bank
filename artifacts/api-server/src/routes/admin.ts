@@ -406,8 +406,9 @@ router.get("/audit-logs", async (req: Request, res: Response): Promise<void> => 
 // ─── Create customer account (admin) ─────────────────────────────────────────
 
 router.post("/create-customer", async (req: Request, res: Response): Promise<void> => {
-  const { firstName, lastName, email, password, phone, accountType } = req.body as {
-    firstName?: string; lastName?: string; email?: string; password?: string; phone?: string; accountType?: string;
+  const { firstName, lastName, email, password, phone, accountType, role } = req.body as {
+    firstName?: string; lastName?: string; email?: string; password?: string;
+    phone?: string; accountType?: string; role?: string;
   };
   if (!email || !password) { res.status(400).json({ error: "email and password required" }); return; }
   try {
@@ -415,9 +416,11 @@ router.post("/create-customer", async (req: Request, res: Response): Promise<voi
     if (existing.length) { res.status(409).json({ error: "Email already in use" }); return; }
 
     const passwordHash = await bcrypt.hash(password, 12);
+    const allowedRoles = ["customer", "staff", "admin"];
+    const userRole = allowedRoles.includes(role ?? "") ? (role as "customer" | "staff" | "admin") : "customer";
     const [user] = await db.insert(usersTable).values({
       email: email.toLowerCase(), firstName: firstName ?? null, lastName: lastName ?? null,
-      phone: phone ?? null, passwordHash, role: "customer", isActive: true,
+      phone: phone ?? null, passwordHash, role: userRole, isActive: true,
     }).returning();
 
     // Create bank account

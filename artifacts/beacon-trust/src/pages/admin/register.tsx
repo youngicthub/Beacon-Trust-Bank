@@ -12,7 +12,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import { PublicLayout } from "@/components/layout/public-layout";
-import { supabase } from "@/integrations/supabase/client";
+import { apiFetch } from "@/lib/api";
+import { saveToken } from "@/hooks/use-auth";
+import type { AuthUser } from "@/hooks/use-auth";
 
 const schema = z.object({
   firstName: z.string().min(1, "First name is required."),
@@ -38,19 +40,11 @@ export default function AdminRegister() {
   const onSubmit = async (data: Values) => {
     setSubmitting(true);
     try {
-      const { data: res, error } = await supabase.functions.invoke("admin-register", {
-        body: data,
+      const result = await apiFetch<{ token: string; user: AuthUser }>('/api/auth/admin-register', {
+        method: 'POST',
+        body: JSON.stringify(data),
       });
-      if (error) throw error;
-      if ((res as any)?.error) throw new Error((res as any).error);
-
-      // Auto sign-in after registration.
-      const { error: signInErr } = await supabase.auth.signInWithPassword({
-        email: data.email,
-        password: data.password,
-      });
-      if (signInErr) throw signInErr;
-
+      saveToken(result.token);
       toast({ title: "Admin account created", description: "Welcome to the admin portal." });
       setLocation("/admin");
     } catch (err: any) {

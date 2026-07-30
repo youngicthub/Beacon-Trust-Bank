@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,14 +12,16 @@ import { format } from 'date-fns';
 
 type ManagedAccount = {
   id: string;
-  user_id: string;
-  account_number: string;
+  userId: string;
+  accountNumber: string;
   type: string;
-  balance: number;
+  balance: string;
   currency: string;
   status: string;
-  created_at: string;
-  user?: { first_name: string | null; last_name: string | null; email: string } | null;
+  createdAt: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -38,48 +40,57 @@ export default function AdminAccountManagement() {
 
   const load = async () => {
     setIsLoading(true);
-    const { data: accs, error } = await supabase
-      .from('accounts')
-      .select('id,user_id,account_number,type,balance,currency,status,created_at')
-      .order('created_at', { ascending: false });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-      setRows([]); setIsLoading(false); return;
+    try {
+      const data = await apiFetch<ManagedAccount[]>('/api/admin/accounts');
+      setRows(data ?? []);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
     }
-    const userIds = Array.from(new Set((accs ?? []).map(a => a.user_id)));
-    let userMap = new Map<string, { first_name: string | null; last_name: string | null; email: string }>();
-    if (userIds.length) {
-      const { data: users } = await supabase.from('users').select('id,first_name,last_name,email').in('id', userIds);
-      (users ?? []).forEach(u => userMap.set(u.id, { first_name: u.first_name, last_name: u.last_name, email: u.email }));
-    }
-    setRows((accs ?? []).map(a => ({ ...a, user: userMap.get(a.user_id) ?? null })) as ManagedAccount[]);
     setIsLoading(false);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => { load(); }, []);
 
   const setStatus = async (id: string, status: 'active' | 'frozen') => {
     setActing(id);
-    const { error } = await supabase.from('accounts').update({ status }).eq('id', id);
-    setActing(null);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-      return;
+    try {
+      await apiFetch(`/api/admin/accounts/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status }),
+      });
+      setRows(prev => prev.map(a => a.id === id ? { ...a, status } : a));
+      toast({ title: status === 'frozen' ? 'Account locked' : 'Account unlocked' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
     }
-    toast({ title: status === 'frozen' ? 'Account locked' : 'Account unlocked' });
-    load();
+    setActing(null);
   };
 
-  const formatCurrency = (amount: number, currency: string) =>
+  const setStatusApprove = async (id: string) => {
+    setActing(id);
+    try {
+      await apiFetch(`/api/admin/accounts/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'active' }),
+      });
+      setRows(prev => prev.map(a => a.id === id ? { ...a, status: 'active' } : a));
+      toast({ title: 'Account approved' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message });
+    }
+    setActing(null);
+  };
+
+  const formatCurrency = (amount: string | number, currency: string) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD' }).format(Number(amount) || 0);
 
   const filtered = rows.filter(a => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
-      a.account_number.toLowerCase().includes(q) ||
-      (a.user?.email ?? '').toLowerCase().includes(q) ||
-      `${a.user?.first_name ?? ''} ${a.user?.last_name ?? ''}`.toLowerCase().includes(q)
+      a.accountNumber.toLowerCase().includes(q) ||
+      (a.email ?? '').toLowerCase().includes(q) ||
+      `${a.firstName ?? ''} ${a.lastName ?? ''}`.toLowerCase().includes(q)
     );
   });
 
@@ -124,14 +135,16 @@ export default function AdminAccountManagement() {
                   {filtered.map(acc => (
                     <tr key={acc.id} className="hover:bg-muted/20 transition-colors">
                       <td className="px-5 py-4">
-                        <div className="font-mono font-semibold">••••{acc.account_number.slice(-4)}</div>
+                        <div className="font-mono font-semibold">••••{acc.accountNumber.slice(-4)}</div>
                         <div className="text-xs text-muted-foreground uppercase tracking-wider mt-0.5">{acc.type}</div>
                       </td>
                       <td className="px-5 py-4">
-                        {acc.user ? (
+                        {acc.firstName || acc.lastName ? (
                           <>
-                            <div className="flex items-center gap-1.5 font-medium"><User className="w-3.5 h-3.5 text-muted-foreground" />{acc.user.first_name} {acc.user.last_name}</div>
-                            <div className="text-xs text-muted-foreground mt-0.5">{acc.user.email}</div>
+                            <div className="flex items-center gap-1.5 font-medium">
+                              <User className="w-3.5 h-3.5 text-muted-foreground" />{acc.firstName} {acc.lastName}
+                            </div>
+                            <div className="text-xs text-muted-foreground mt-0.5">{acc.email}</div>
                           </>
                         ) : <span className="text-muted-foreground text-xs">Unknown</span>}
                       </td>
@@ -139,10 +152,10 @@ export default function AdminAccountManagement() {
                       <td className="px-5 py-4 text-center">
                         <Badge variant="outline" className={`uppercase text-[10px] tracking-wider ${STATUS_STYLES[acc.status] ?? ''}`}>{acc.status}</Badge>
                       </td>
-                      <td className="px-5 py-4 text-center text-xs text-muted-foreground font-mono">{format(new Date(acc.created_at), 'MMM dd, yyyy')}</td>
+                      <td className="px-5 py-4 text-center text-xs text-muted-foreground font-mono">{format(new Date(acc.createdAt), 'MMM dd, yyyy')}</td>
                       <td className="px-5 py-4 text-center">
                         {acc.status === 'pending' ? (
-                          <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10" disabled={acting === acc.id} onClick={() => setStatus(acc.id, 'active')}>
+                          <Button size="sm" variant="outline" className="border-emerald-500/40 text-emerald-600 hover:bg-emerald-500/10" disabled={acting === acc.id} onClick={() => setStatusApprove(acc.id)}>
                             <CheckCircle2 className="w-3.5 h-3.5 mr-1" /> Approve
                           </Button>
                         ) : acc.status === 'frozen' ? (

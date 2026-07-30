@@ -1,6 +1,6 @@
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
 import { useQuery } from '@tanstack/react-query';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Users, Wallet, ArrowRightLeft, ShieldCheck, HelpCircle, TrendingUp, Building, UserPlus, Activity } from '@/lib/icons';
@@ -30,83 +30,10 @@ type Analytics = {
   recentSignups: Signup[];
 };
 
-async function loadAnalytics(): Promise<Analytics> {
-  const sinceIso = new Date(Date.now() - 1000 * 60 * 60 * 24 * 180).toISOString();
-
-  const [
-    customersRes,
-    accountsRes,
-    loansRes,
-    txCountRes,
-    kycRes,
-    ticketsRes,
-    txTrendRes,
-    signupsRes,
-  ] = await Promise.all([
-    supabase.from('users').select('id', { count: 'exact', head: true }).eq('role', 'customer'),
-    supabase.from('accounts').select('balance', { count: 'exact' }).eq('status', 'active'),
-    supabase.from('loans').select('amount').in('status', ['active', 'approved']),
-    supabase.from('transactions').select('id', { count: 'exact', head: true }),
-    supabase.from('kyc_records').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('support_tickets').select('id', { count: 'exact', head: true }).eq('status', 'open'),
-    supabase.from('transactions').select('amount, type, created_at').gte('created_at', sinceIso),
-    supabase.from('users').select('id, first_name, last_name, email, created_at, kyc_records(status)').order('created_at', { ascending: false }).limit(6),
-  ]);
-
-  const errors = [customersRes, accountsRes, loansRes, txCountRes, kycRes, ticketsRes, txTrendRes, signupsRes]
-    .map((r) => r.error).filter(Boolean);
-  if (errors.length) throw errors[0];
-
-  const totalDeposits = (accountsRes.data ?? []).reduce((sum, r: any) => sum + Number(r.balance ?? 0), 0);
-  const totalLoans = (loansRes.data ?? []).reduce((sum, r: any) => sum + Number(r.amount ?? 0), 0);
-
-  // Build 6-month trend
-  const buckets = new Map<string, { income: number; expenses: number }>();
-  const now = new Date();
-  for (let i = 5; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    buckets.set(format(d, 'yyyy-MM'), { income: 0, expenses: 0 });
-  }
-  for (const t of (txTrendRes.data ?? []) as any[]) {
-    const key = format(new Date(t.created_at), 'yyyy-MM');
-    const b = buckets.get(key);
-    if (!b) continue;
-    const amt = Number(t.amount ?? 0);
-    if (['deposit', 'transfer_in', 'credit', 'refund'].includes(t.type)) b.income += amt;
-    else b.expenses += amt;
-  }
-  const transactionTrends: TrendPoint[] = Array.from(buckets.entries()).map(([k, v]) => ({
-    month: format(new Date(k + '-01'), 'MMM'),
-    income: v.income,
-    expenses: v.expenses,
-  }));
-
-  const recentSignups: Signup[] = (signupsRes.data ?? []).map((u: any) => ({
-    id: u.id,
-    firstName: u.first_name ?? '',
-    lastName: u.last_name ?? '',
-    email: u.email ?? '',
-    createdAt: u.created_at,
-    kycStatus: (u.kyc_records as any[])?.[0]?.status ?? null,
-  }));
-
-  return {
-    totalCustomers: customersRes.count ?? 0,
-    totalDeposits,
-    totalLoans,
-    totalTransactions: txCountRes.count ?? 0,
-    totalAccounts: accountsRes.count ?? 0,
-    pendingKyc: kycRes.count ?? 0,
-    openTickets: ticketsRes.count ?? 0,
-    transactionTrends,
-    recentSignups,
-  };
-}
-
 export default function AdminDashboard() {
-  const { data: analytics, isLoading, isError, error } = useQuery({
+  const { data: analytics, isLoading, isError, error } = useQuery<Analytics>({
     queryKey: ['admin', 'analytics'],
-    queryFn: loadAnalytics,
+    queryFn: () => apiFetch<Analytics>('/api/admin/analytics'),
   });
 
   const formatCurrency = (amount: number | undefined) => {
