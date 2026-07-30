@@ -59,7 +59,6 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
-PORT = "3001"
 VITE_API_URL = ""
 
 [nix]
