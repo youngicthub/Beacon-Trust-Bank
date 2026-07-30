@@ -7,7 +7,7 @@ import { format } from "date-fns";
 
 const router: IRouter = Router();
 router.use(authenticate);
-router.use(requireRole(["admin", "staff"]));
+router.use(requireRole("admin", "staff"));
 
 // ─── Analytics / Dashboard ───────────────────────────────────────────────────
 

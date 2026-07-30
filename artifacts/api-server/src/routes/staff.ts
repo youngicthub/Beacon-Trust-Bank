@@ -5,7 +5,7 @@ import { authenticate, requireRole } from "../middleware/auth";
 
 const router: IRouter = Router();
 router.use(authenticate);
-router.use(requireRole(["admin", "staff"]));
+router.use(requireRole("admin", "staff"));
 
 // Search users
 router.get("/users/search", async (req: Request, res: Response): Promise<void> => {
