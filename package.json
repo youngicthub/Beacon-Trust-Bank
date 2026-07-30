@@ -17,8 +17,7 @@
     "typecheck": "npm run typecheck:libs && npm run typecheck -w @workspace/api-server && npm run typecheck -w @workspace/beacon-trust && npm run typecheck -w @workspace/scripts"
   },
   "overrides": {
-    "esbuild": "0.27.3",
-    "@esbuild-kit/esm-loader": "npm:tsx@^4.21.0"
+    "esbuild": "0.27.3"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^5.0.4",
