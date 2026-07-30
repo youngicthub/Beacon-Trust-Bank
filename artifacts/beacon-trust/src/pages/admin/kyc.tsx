@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { ShieldAlert, ShieldCheck, Clock, FileText, CheckCircle, XCircle, User, RefreshCw, ChevronDown, ChevronUp, Eye } from '@/lib/icons';
 import { format } from 'date-fns';
 import { Link } from 'wouter';
-import { useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
@@ -17,21 +16,23 @@ import { cn } from '@/lib/utils';
 
 type KycRecord = {
   id: string;
-  user_id: string;
+  userId: string;
   status: 'pending' | 'verified' | 'rejected';
-  document_type: string;
-  document_number: string;
-  full_name: string;
-  date_of_birth: string | null;
+  documentType: string;
+  documentNumber: string;
+  fullName: string;
+  dateOfBirth: string | null;
   address: string | null;
   nationality: string | null;
-  document_front_image: string | null;
-  document_back_image: string | null;
-  rejection_reason: string | null;
-  admin_notes: string | null;
-  created_at: string;
-  reviewed_at: string | null;
-  users: { id: string; email: string; first_name: string | null; last_name: string | null } | null;
+  documentFrontImage: string | null;
+  documentBackImage: string | null;
+  rejectionReason: string | null;
+  adminNotes: string | null;
+  createdAt: string;
+  reviewedAt: string | null;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 function DocImage({ src, label }: { src: string; label: string }) {
@@ -60,16 +61,14 @@ function DocImage({ src, label }: { src: string; label: string }) {
   );
 }
 
-function KycCard({ record, onApprove, onReject, approving, rejecting }: {
+function KycCard({ record, onApprove, onReject, approving }: {
   record: KycRecord;
   onApprove: (id: string) => void;
   onReject: (id: string) => void;
   approving: boolean;
-  rejecting: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const user = record.users;
-  const name = user ? `${user.first_name} ${user.last_name}` : record.full_name;
+  const name = record.firstName ? `${record.firstName} ${record.lastName}` : record.fullName;
   const isPending = record.status === 'pending';
 
   return (
@@ -96,16 +95,16 @@ function KycCard({ record, onApprove, onReject, approving, rejecting }: {
                 {record.status}
               </Badge>
             </div>
-            {user && (
-              <Link href={`/admin/users/${user.id}`} className="text-xs text-primary hover:underline">
-                {user.email}
+            {record.userId && (
+              <Link href={`/admin/users/${record.userId}`} className="text-xs text-primary hover:underline">
+                {record.email}
               </Link>
             )}
             <div className="text-xs text-muted-foreground mt-1">
-              <span className="uppercase font-mono">{record.document_type}</span> · {record.document_number}
+              <span className="uppercase font-mono">{record.documentType}</span> · {record.documentNumber}
             </div>
             <div className="text-xs text-muted-foreground">
-              Submitted {format(new Date(record.created_at), 'MMM d, yyyy')}
+              Submitted {format(new Date(record.createdAt), 'MMM d, yyyy')}
             </div>
           </div>
         </div>
@@ -117,7 +116,6 @@ function KycCard({ record, onApprove, onReject, approving, rejecting }: {
                 variant="outline"
                 size="sm"
                 onClick={() => onReject(record.id)}
-                disabled={rejecting}
                 className="border-destructive/30 text-destructive hover:bg-destructive/10"
               >
                 <XCircle className="mr-1.5 h-3.5 w-3.5" /> Reject
@@ -141,15 +139,15 @@ function KycCard({ record, onApprove, onReject, approving, rejecting }: {
       {expanded && (
         <div className="px-5 pb-5 border-t border-border/50 pt-4">
           <div className="grid grid-cols-2 gap-4 text-sm mb-4">
-            {record.full_name && <div><span className="text-muted-foreground">Full Name:</span> {record.full_name}</div>}
-            {record.date_of_birth && <div><span className="text-muted-foreground">DOB:</span> {format(new Date(record.date_of_birth), 'MMM d, yyyy')}</div>}
+            {record.fullName && <div><span className="text-muted-foreground">Full Name:</span> {record.fullName}</div>}
+            {record.dateOfBirth && <div><span className="text-muted-foreground">DOB:</span> {format(new Date(record.dateOfBirth), 'MMM d, yyyy')}</div>}
             {record.nationality && <div><span className="text-muted-foreground">Nationality:</span> {record.nationality}</div>}
             {record.address && <div className="col-span-2"><span className="text-muted-foreground">Address:</span> {record.address}</div>}
-            {record.rejection_reason && <div className="col-span-2 text-destructive"><span className="text-muted-foreground">Rejection Reason:</span> {record.rejection_reason}</div>}
+            {record.rejectionReason && <div className="col-span-2 text-destructive"><span className="text-muted-foreground">Rejection Reason:</span> {record.rejectionReason}</div>}
           </div>
           <div className="grid grid-cols-2 gap-4">
-            {record.document_front_image && <DocImage src={record.document_front_image} label="Front" />}
-            {record.document_back_image && <DocImage src={record.document_back_image} label="Back" />}
+            {record.documentFrontImage && <DocImage src={record.documentFrontImage} label="Front" />}
+            {record.documentBackImage && <DocImage src={record.documentBackImage} label="Back" />}
           </div>
         </div>
       )}
@@ -169,59 +167,48 @@ export default function AdminKyc() {
   const [adminNotes, setAdminNotes] = useState('');
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchKyc();
-  }, [filter]);
+  useEffect(() => { fetchKyc(); }, [filter]);
 
   const fetchKyc = async () => {
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from('kyc_records')
-      .select('id, user_id, status, document_type, document_number, full_name, date_of_birth, address, nationality, document_front_image, document_back_image, rejection_reason, admin_notes, created_at, reviewed_at, users!inner(id, email, first_name, last_name)')
-      .eq('status', filter)
-      .order('created_at', { ascending: false });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
-      setRecords((data as any[]) ?? []);
+    try {
+      const all = await apiFetch<KycRecord[]>(`/api/admin/kyc`);
+      setRecords((all ?? []).filter(r => r.status === filter));
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'Failed to load KYC records.' });
     }
     setIsLoading(false);
   };
 
   const handleApprove = async (id: string) => {
     setApprovingId(id);
-    const { error } = await supabase
-      .from('kyc_records')
-      .update({ status: 'verified', reviewed_at: new Date().toISOString() })
-      .eq('id', id);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await apiFetch(`/api/admin/kyc/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'verified' }),
+      });
       setRecords(prev => prev.filter(r => r.id !== id));
       toast({ title: 'KYC Approved', description: 'The identity has been verified successfully.' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'Failed to approve KYC.' });
     }
     setApprovingId(null);
   };
 
   const handleRejectConfirm = async () => {
     if (!rejectId || !rejectionReason.trim()) return;
-    const { error } = await supabase
-      .from('kyc_records')
-      .update({
-        status: 'rejected',
-        rejection_reason: rejectionReason,
-        admin_notes: adminNotes || null,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', rejectId);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await apiFetch(`/api/admin/kyc/${rejectId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'rejected', rejectionReason, adminNotes: adminNotes || null }),
+      });
       setRecords(prev => prev.filter(r => r.id !== rejectId));
       toast({ title: 'KYC Rejected', description: 'The submission has been declined.' });
       setRejectId(null);
       setRejectionReason('');
       setAdminNotes('');
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'Failed to reject KYC.' });
     }
   };
 
@@ -273,7 +260,6 @@ export default function AdminKyc() {
                 onApprove={handleApprove}
                 onReject={(id) => { setRejectId(id); setRejectionReason(''); setAdminNotes(''); }}
                 approving={approvingId === record.id}
-                rejecting={false}
               />
             ))}
           </div>

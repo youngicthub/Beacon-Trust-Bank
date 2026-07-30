@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ArrowUpRight, ArrowDownRight } from '@/lib/icons';
@@ -12,21 +12,20 @@ import { useToast } from '@/hooks/use-toast';
 
 type TxRow = {
   id: string;
-  amount: number;
+  accountId: string;
   type: string;
+  amount: string | number;
   status: string;
-  description: string | null;
   category: string | null;
+  description: string | null;
+  recipientName: string | null;
+  recipientAccount: string | null;
   reference: string | null;
-  recipient_name: string | null;
-  recipient_account: string | null;
-  created_at: string;
-  accounts: {
-    id: string;
-    account_number: string;
-    type: string;
-    users: { first_name: string | null; last_name: string | null; email: string; id: string } | null;
-  } | null;
+  createdAt: string;
+  accountNumber: string | null;
+  userId: string | null;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 const LIMIT = 20;
@@ -37,44 +36,33 @@ export default function AdminTransactions() {
   const filterUserId = searchParams.get('userId');
 
   const [transactions, setTransactions] = useState<TxRow[]>([]);
-  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  useEffect(() => {
-    setPage(0);
-  }, [filterUserId]);
-
-  useEffect(() => {
-    fetchTransactions();
-  }, [page, filterUserId]);
+  useEffect(() => { setPage(0); }, [filterUserId]);
+  useEffect(() => { fetchTransactions(); }, [page, filterUserId]);
 
   const fetchTransactions = async () => {
     setIsLoading(true);
-    let query = supabase
-      .from('transactions')
-      .select('id, amount, type, status, description, category, reference, recipient_name, recipient_account, created_at, accounts!inner(id, account_number, type, users!inner(id, first_name, last_name, email))', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(page * LIMIT, page * LIMIT + LIMIT - 1);
-
-    if (filterUserId) {
-      // Filter transactions belonging to a specific user via accounts
-      query = (query as any).eq('accounts.user_id', filterUserId);
-    }
-
-    const { data, error, count } = await query;
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
-      setTransactions((data as any[]) ?? []);
-      setTotal(count ?? 0);
+    try {
+      const params = new URLSearchParams({
+        limit: String(LIMIT),
+        offset: String(page * LIMIT),
+      });
+      if (filterUserId) params.set('userId', filterUserId);
+      const data = await apiFetch<TxRow[]>(`/api/admin/transactions?${params}`);
+      setTransactions(data ?? []);
+      setHasMore((data ?? []).length === LIMIT);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'Failed to load transactions.' });
     }
     setIsLoading(false);
   };
 
-  const formatCurrency = (amount: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  const formatCurrency = (amount: string | number) =>
+    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number(amount));
 
   const getStatusColor = (status: string) => ({
     completed: 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20',
@@ -117,57 +105,53 @@ export default function AdminTransactions() {
                     </tr>
                   ))
                 ) : transactions.length > 0 ? (
-                  transactions.map((tx) => {
-                    const acc = tx.accounts;
-                    const userInfo = acc?.users;
-                    return (
-                      <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="font-mono text-xs text-muted-foreground">
-                            {format(new Date(tx.created_at), 'MMM d, yyyy')}
-                          </div>
-                          {tx.reference && (
-                            <div className="font-mono text-xs text-muted-foreground/60">{tx.reference}</div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          {acc && (
-                            <>
-                              <div className="font-mono text-xs">{acc.account_number}</div>
-                              {userInfo && (
-                                <Link
-                                  href={`/admin/users/${userInfo.id}`}
-                                  className="text-xs text-primary hover:underline"
-                                >
-                                  {userInfo.first_name} {userInfo.last_name}
-                                </Link>
-                              )}
-                            </>
-                          )}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="text-sm">{tx.description || '—'}</div>
-                          {tx.recipient_name && (
-                            <div className="text-xs text-muted-foreground">→ {tx.recipient_name}</div>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-right whitespace-nowrap">
-                          <div className={`flex items-center justify-end gap-1.5 font-mono font-bold ${tx.type === 'credit' ? 'text-emerald-600' : 'text-foreground'}`}>
-                            {tx.type === 'credit'
-                              ? <ArrowUpRight className="h-4 w-4" />
-                              : <ArrowDownRight className="h-4 w-4" />
-                            }
-                            {formatCurrency(tx.amount)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 text-center">
-                          <Badge className={`capitalize text-xs border ${getStatusColor(tx.status)}`}>
-                            {tx.status}
-                          </Badge>
-                        </td>
-                      </tr>
-                    );
-                  })
+                  transactions.map((tx) => (
+                    <tr key={tx.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="font-mono text-xs text-muted-foreground">
+                          {format(new Date(tx.createdAt), 'MMM d, yyyy')}
+                        </div>
+                        {tx.reference && (
+                          <div className="font-mono text-xs text-muted-foreground/60">{tx.reference}</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {tx.accountNumber && (
+                          <>
+                            <div className="font-mono text-xs">{tx.accountNumber}</div>
+                            {tx.userId && (
+                              <Link
+                                href={`/admin/users/${tx.userId}`}
+                                className="text-xs text-primary hover:underline"
+                              >
+                                {tx.firstName} {tx.lastName}
+                              </Link>
+                            )}
+                          </>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        <div className="text-sm">{tx.description || '—'}</div>
+                        {tx.recipientName && (
+                          <div className="text-xs text-muted-foreground">→ {tx.recipientName}</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 text-right whitespace-nowrap">
+                        <div className={`flex items-center justify-end gap-1.5 font-mono font-bold ${tx.type === 'credit' ? 'text-emerald-600' : 'text-foreground'}`}>
+                          {tx.type === 'credit'
+                            ? <ArrowUpRight className="h-4 w-4" />
+                            : <ArrowDownRight className="h-4 w-4" />
+                          }
+                          {formatCurrency(tx.amount)}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 text-center">
+                        <Badge className={`capitalize text-xs border ${getStatusColor(tx.status)}`}>
+                          {tx.status}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))
                 ) : (
                   <tr>
                     <td colSpan={5} className="px-6 py-16 text-center text-muted-foreground">
@@ -179,14 +163,12 @@ export default function AdminTransactions() {
             </table>
           </div>
           <div className="px-6 py-4 border-t border-border/50 flex items-center justify-between text-sm text-muted-foreground">
-            <span>
-              {isLoading ? '—' : `Showing ${page * LIMIT + 1}–${Math.min((page + 1) * LIMIT, total)} of ${total}`}
-            </span>
+            <span>{isLoading ? '—' : `Page ${page + 1}`}</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || isLoading}>
                 Previous
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * LIMIT >= total || isLoading}>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={!hasMore || isLoading}>
                 Next
               </Button>
             </div>

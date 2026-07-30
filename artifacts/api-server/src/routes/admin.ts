@@ -238,6 +238,10 @@ router.get("/kyc", async (_req: Request, res: Response): Promise<void> => {
       documentType: kycRecordsTable.documentType, documentNumber: kycRecordsTable.documentNumber,
       status: kycRecordsTable.status, adminNotes: kycRecordsTable.adminNotes,
       rejectionReason: kycRecordsTable.rejectionReason, createdAt: kycRecordsTable.createdAt,
+      reviewedAt: kycRecordsTable.reviewedAt, dateOfBirth: kycRecordsTable.dateOfBirth,
+      address: kycRecordsTable.address, nationality: kycRecordsTable.nationality,
+      documentFrontImage: kycRecordsTable.documentFrontImage,
+      documentBackImage: kycRecordsTable.documentBackImage,
       email: usersTable.email, firstName: usersTable.firstName, lastName: usersTable.lastName,
     }).from(kycRecordsTable)
       .leftJoin(usersTable, eq(kycRecordsTable.userId, usersTable.id))

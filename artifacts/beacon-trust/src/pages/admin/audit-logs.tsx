@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { format } from 'date-fns';
@@ -12,12 +12,15 @@ import { useToast } from '@/hooks/use-toast';
 
 type AuditRow = {
   id: string;
-  user_id: string | null;
+  userId: string | null;
   action: string;
-  entity_type: string | null;
-  entity_id: string | null;
-  ip_address: string | null;
-  created_at: string;
+  entityType: string | null;
+  entityId: string | null;
+  ipAddress: string | null;
+  createdAt: string;
+  email: string | null;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 const LIMIT = 50;
@@ -33,25 +36,19 @@ export default function AdminAuditLogs() {
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [page, setPage] = useState(0);
-  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const { toast } = useToast();
 
-  useEffect(() => {
-    fetchLogs();
-  }, [page]);
+  useEffect(() => { fetchLogs(); }, [page]);
 
   const fetchLogs = async () => {
     setIsLoading(true);
-    const { data, error, count } = await supabase
-      .from('audit_logs')
-      .select('id, user_id, action, entity_type, entity_id, ip_address, created_at', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(page * LIMIT, page * LIMIT + LIMIT - 1);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
-      setLogs((data ?? []) as AuditRow[]);
-      setTotal(count ?? 0);
+    try {
+      const data = await apiFetch<AuditRow[]>(`/api/admin/audit-logs?limit=${LIMIT}&offset=${page * LIMIT}`);
+      setLogs(data ?? []);
+      setHasMore((data ?? []).length === LIMIT);
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err?.message ?? 'Failed to load audit logs.' });
     }
     setIsLoading(false);
   };
@@ -94,12 +91,12 @@ export default function AdminAuditLogs() {
                   logs.map(log => (
                     <tr key={log.id} className="hover:bg-muted/30 transition-colors text-xs sm:text-sm">
                       <td className="px-6 py-3 whitespace-nowrap text-muted-foreground">
-                        {format(new Date(log.created_at), 'yyyy-MM-dd HH:mm:ss')}
+                        {format(new Date(log.createdAt), 'yyyy-MM-dd HH:mm:ss')}
                       </td>
                       <td className="px-6 py-3 whitespace-nowrap">
-                        {log.user_id ? (
-                          <Link href={`/admin/users/${log.user_id}`} className="text-primary hover:underline">
-                            {log.user_id.substring(0, 8)}…
+                        {log.userId ? (
+                          <Link href={`/admin/users/${log.userId}`} className="text-primary hover:underline">
+                            {log.firstName ? `${log.firstName} ${log.lastName}` : log.userId.substring(0, 8) + '…'}
                           </Link>
                         ) : (
                           <span className="text-muted-foreground">—</span>
@@ -111,12 +108,12 @@ export default function AdminAuditLogs() {
                         </Badge>
                       </td>
                       <td className="px-6 py-3 text-muted-foreground">
-                        {log.entity_type ? (
-                          <span>{log.entity_type}{log.entity_id ? ` #${log.entity_id.substring(0, 8)}` : ''}</span>
+                        {log.entityType ? (
+                          <span>{log.entityType}{log.entityId ? ` #${log.entityId.substring(0, 8)}` : ''}</span>
                         ) : '—'}
                       </td>
                       <td className="px-6 py-3 text-muted-foreground">
-                        {log.ip_address ?? '—'}
+                        {log.ipAddress ?? '—'}
                       </td>
                     </tr>
                   ))
@@ -132,12 +129,12 @@ export default function AdminAuditLogs() {
             </table>
           </div>
           <div className="px-6 py-4 border-t border-border/50 flex items-center justify-between text-sm text-muted-foreground">
-            <span>{isLoading ? '—' : `${total} total entries`}</span>
+            <span>{isLoading ? '—' : `Page ${page + 1}`}</span>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0 || isLoading}>
                 Previous
               </Button>
-              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={(page + 1) * LIMIT >= total || isLoading}>
+              <Button variant="outline" size="sm" onClick={() => setPage(p => p + 1)} disabled={!hasMore || isLoading}>
                 Next
               </Button>
             </div>

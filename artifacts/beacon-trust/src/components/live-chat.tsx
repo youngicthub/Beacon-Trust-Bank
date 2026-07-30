@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, X, Send, Loader2 } from '@/lib/icons';
 import { Button } from '@/components/ui/button';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 
 type Msg = { role: 'user' | 'assistant'; content: string };
 
@@ -40,14 +40,11 @@ export function LiveChat() {
     setInput('');
     setSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke('live-chat', {
-        body: { messages: next.map(m => ({ role: m.role, content: m.content })) },
+      const data = await apiFetch<{ reply: string }>('/api/support/chat', {
+        method: 'POST',
+        body: JSON.stringify({ messages: next.map(m => ({ role: m.role, content: m.content })) }),
       });
-      if (error) throw error;
-      const reply = (data as { reply?: string; error?: string })?.reply
-        ?? (data as { error?: string })?.error
-        ?? "Sorry, I couldn't respond right now.";
-      setMessages([...next, { role: 'assistant', content: reply }]);
+      setMessages([...next, { role: 'assistant', content: data.reply ?? "Sorry, I couldn't respond right now." }]);
     } catch (e: any) {
       setMessages([...next, { role: 'assistant', content: `Sorry — I'm having trouble connecting. ${e?.message ?? ''}` }]);
     } finally {
@@ -75,7 +72,7 @@ export function LiveChat() {
           <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
             <div>
               <div className="font-semibold text-sm">Beacon Trust Concierge</div>
-              <div className="text-[11px] opacity-80">AI assistant · Online</div>
+              <div className="text-[11px] opacity-80">Support · Online</div>
             </div>
             <button onClick={() => setOpen(false)} className="p-1 rounded-md hover:bg-white/10" aria-label="Close">
               <X className="h-4 w-4" />

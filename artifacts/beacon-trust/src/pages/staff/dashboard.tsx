@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -11,11 +11,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type UserResult = {
   id: string;
-  first_name: string | null;
-  last_name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   email: string;
   role: string;
-  is_active: boolean;
+  isActive: boolean;
 };
 
 export default function StaffDashboard() {
@@ -29,12 +29,12 @@ export default function StaffDashboard() {
     if (!search.trim()) return;
     setIsLoading(true);
     setSearched(true);
-    const { data } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, email, role, is_active')
-      .or(`email.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`)
-      .limit(6);
-    setResults((data ?? []) as UserResult[]);
+    try {
+      const data = await apiFetch<UserResult[]>(`/api/staff/users/search?q=${encodeURIComponent(search)}&limit=6`);
+      setResults(data ?? []);
+    } catch {
+      setResults([]);
+    }
     setIsLoading(false);
   };
 
@@ -99,7 +99,7 @@ export default function StaffDashboard() {
                         <div className="flex items-center gap-3">
                           <UserCircle className="h-8 w-8 text-muted-foreground" />
                           <div>
-                            <p className="font-medium text-sm">{user.first_name} {user.last_name}</p>
+                            <p className="font-medium text-sm">{user.firstName} {user.lastName}</p>
                             <div className="flex items-center gap-2">
                               <Mail className="h-3 w-3 text-muted-foreground" />
                               <p className="text-xs text-muted-foreground">{user.email}</p>
@@ -108,7 +108,7 @@ export default function StaffDashboard() {
                         </div>
                         <div className="flex items-center gap-2">
                           <Badge variant="outline" className="text-[10px] uppercase">{user.role}</Badge>
-                          {!user.is_active && <Badge variant="destructive" className="text-[10px]">Suspended</Badge>}
+                          {!user.isActive && <Badge variant="destructive" className="text-[10px]">Suspended</Badge>}
                           <ChevronRight className="h-4 w-4 text-muted-foreground" />
                         </div>
                       </div>

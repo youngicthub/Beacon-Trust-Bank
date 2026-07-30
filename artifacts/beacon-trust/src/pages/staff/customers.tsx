@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Search, UserCircle, Mail, Phone, ShieldCheck, ChevronRight } from '@/lib/icons';
+import { Search, UserCircle, Mail, Phone, ChevronRight } from '@/lib/icons';
 import { Link } from 'wouter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -11,13 +11,12 @@ import { Skeleton } from '@/components/ui/skeleton';
 
 type UserResult = {
   id: string;
-  first_name: string | null;
-  last_name: string | null;
+  firstName: string | null;
+  lastName: string | null;
   email: string;
   phone: string | null;
-  is_active: boolean;
+  isActive: boolean;
   role: string;
-  kyc_records: { status: string } | null;
 };
 
 export default function StaffCustomers() {
@@ -31,13 +30,12 @@ export default function StaffCustomers() {
     if (!search.trim()) return;
     setIsLoading(true);
     setSearched(true);
-    const { data } = await supabase
-      .from('users')
-      .select('id, first_name, last_name, email, phone, is_active, role, kyc_records(status)')
-      .or(`email.ilike.%${search}%,first_name.ilike.%${search}%,last_name.ilike.%${search}%`)
-      .order('created_at', { ascending: false })
-      .limit(20);
-    setResults((data as any[]) ?? []);
+    try {
+      const data = await apiFetch<UserResult[]>(`/api/staff/users/search?q=${encodeURIComponent(search)}&limit=20`);
+      setResults(data ?? []);
+    } catch {
+      setResults([]);
+    }
     setIsLoading(false);
   };
 
@@ -75,41 +73,33 @@ export default function StaffCustomers() {
             <div className="text-sm font-medium text-muted-foreground">Found {results.length} result{results.length !== 1 ? 's' : ''} for "{search}"</div>
             {results.length > 0 ? (
               <div className="grid lg:grid-cols-2 gap-4">
-                {results.map((user) => {
-                  const kyc = (user.kyc_records as any)?.status;
-                  return (
-                    <Link key={user.id} href={`/staff/customers/${user.id}`}>
-                      <Card className="p-6 border-border/50 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group h-full flex flex-col">
-                        <div className="flex justify-between items-start mb-4">
-                          <div className="flex items-center gap-4">
-                            <div className="h-14 w-14 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                              <UserCircle className="h-8 w-8" />
-                            </div>
-                            <div>
-                              <h3 className="font-bold text-xl text-foreground group-hover:text-primary transition-colors">
-                                {user.first_name} {user.last_name}
-                              </h3>
-                              <div className="flex gap-2 mt-1">
-                                <Badge variant="outline" className="uppercase text-[10px]">{user.role}</Badge>
-                                {!user.is_active && <Badge variant="destructive" className="text-[10px]">Suspended</Badge>}
-                                {kyc === 'verified' && (
-                                  <div className="flex items-center gap-1 text-emerald-600 text-xs">
-                                    <ShieldCheck className="h-3.5 w-3.5" /> KYC Verified
-                                  </div>
-                                )}
-                              </div>
+                {results.map((user) => (
+                  <Link key={user.id} href={`/staff/customers/${user.id}`}>
+                    <Card className="p-6 border-border/50 shadow-sm hover:border-primary/50 hover:shadow-md transition-all cursor-pointer group h-full flex flex-col">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center gap-4">
+                          <div className="h-14 w-14 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                            <UserCircle className="h-8 w-8" />
+                          </div>
+                          <div>
+                            <h3 className="font-bold text-xl text-foreground group-hover:text-primary transition-colors">
+                              {user.firstName} {user.lastName}
+                            </h3>
+                            <div className="flex gap-2 mt-1">
+                              <Badge variant="outline" className="uppercase text-[10px]">{user.role}</Badge>
+                              {!user.isActive && <Badge variant="destructive" className="text-[10px]">Suspended</Badge>}
                             </div>
                           </div>
-                          <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
                         </div>
-                        <div className="space-y-1 text-sm text-muted-foreground">
-                          <div className="flex items-center gap-2"><Mail className="h-4 w-4 shrink-0" />{user.email}</div>
-                          {user.phone && <div className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0" />{user.phone}</div>}
-                        </div>
-                      </Card>
-                    </Link>
-                  );
-                })}
+                        <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors mt-1" />
+                      </div>
+                      <div className="space-y-1 text-sm text-muted-foreground">
+                        <div className="flex items-center gap-2"><Mail className="h-4 w-4 shrink-0" />{user.email}</div>
+                        {user.phone && <div className="flex items-center gap-2"><Phone className="h-4 w-4 shrink-0" />{user.phone}</div>}
+                      </div>
+                    </Card>
+                  </Link>
+                ))}
               </div>
             ) : (
               <div className="p-16 text-center border border-border/50 rounded-xl bg-card">

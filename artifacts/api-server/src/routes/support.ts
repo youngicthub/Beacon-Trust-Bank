@@ -44,4 +44,13 @@ router.post("/tickets", async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+router.post("/chat", async (_req: Request, res: Response): Promise<void> => {
+  // Stub: AI concierge is not yet configured. Return a helpful static response.
+  res.json({
+    reply:
+      "Thank you for reaching out to Beacon Trust. Our AI concierge is currently being set up. " +
+      "For immediate assistance, please open a support ticket from your dashboard or contact us at support@beacontrust.com.",
+  });
+});
+
 export default router;
