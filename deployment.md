@@ -40,7 +40,7 @@ DATABASE_URL="postgresql://your-connection-string" npm run -w @workspace/db push
 | Setting | Value |
 |---|---|
 | **Root Directory** | *(leave blank)* |
-| **Build Command** | `corepack enable && pnpm install && pnpm run build -w @workspace/api-server` |
+| **Build Command** | `npm install && npm run build -w @workspace/api-server` |
 | **Start Command** | `node --enable-source-maps artifacts/api-server/dist/index.mjs` |
 | **Node Version** | 22 |
 
