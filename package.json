@@ -6,7 +6,6 @@
   "workspaces": [
     "artifacts/*",
     "lib/*",
-    "lib/integrations/*",
     "scripts"
   ],
   "scripts": {
