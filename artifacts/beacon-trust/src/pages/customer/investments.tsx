@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { TrendingUp, PieChart, Plus, AlertTriangle } from '@/lib/icons';
@@ -24,9 +24,11 @@ type InvestmentRow = {
   id: string;
   type: string;
   status: string;
-  amount: number;
-  created_at: string;
+  amount: string;
+  createdAt: string;
 };
+
+type AccountRow = { balance: string };
 
 const investmentSchema = z.object({
   type: z.enum(['mutualFund', 'fixedDeposit', 'stocks', 'bonds', 'crypto']),
@@ -37,7 +39,7 @@ export default function Investments() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [investments, setInvestments] = useState<InvestmentRow[]>([]);
-  const [accounts, setAccounts] = useState<{ balance: number }[]>([]);
+  const [accounts, setAccounts] = useState<AccountRow[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -51,19 +53,21 @@ export default function Investments() {
   const load = async () => {
     if (!user) return;
     setIsLoading(true);
-    const [invRes, accRes] = await Promise.all([
-      supabase.from('investments').select('id, type, status, amount, created_at').eq('user_id', user.id).order('created_at', { ascending: false }),
-      supabase.from('accounts').select('balance').eq('user_id', user.id).eq('status', 'active'),
-    ]);
-    setInvestments((invRes.data ?? []) as InvestmentRow[]);
-    setAccounts((accRes.data ?? []) as { balance: number }[]);
+    try {
+      const [invData, accData] = await Promise.all([
+        apiFetch<InvestmentRow[]>('/api/investments'),
+        apiFetch<AccountRow[]>('/api/accounts'),
+      ]);
+      setInvestments(invData ?? []);
+      setAccounts(accData ?? []);
+    } catch { /* ignore */ }
     setIsLoading(false);
   };
 
   useEffect(() => { load(); }, [user?.id]);
 
-  const totalBalance = accounts.reduce((s, a) => s + a.balance, 0);
-  const totalInvested = investments.filter(i => i.status === 'active').reduce((s, i) => s + i.amount, 0);
+  const totalBalance = accounts.reduce((s, a) => s + Number(a.balance), 0);
+  const totalInvested = investments.filter(i => i.status === 'active').reduce((s, i) => s + Number(i.amount), 0);
   const insufficientFunds = Number(watchedAmount) > 0 && Number(watchedAmount) > totalBalance;
 
   const onSubmit = async (data: z.infer<typeof investmentSchema>) => {
@@ -72,19 +76,17 @@ export default function Investments() {
       toast({ variant: 'destructive', title: 'Insufficient Balance', description: 'Your account balance is too low.' });
       return;
     }
-    const { error } = await supabase.from('investments').insert({
-      user_id: user.id,
-      type: data.type,
-      amount: data.amount,
-      status: 'active',
-    });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await apiFetch('/api/investments', {
+        method: 'POST',
+        body: JSON.stringify({ type: data.type, amount: data.amount }),
+      });
       setIsOpen(false);
       form.reset();
       toast({ title: 'Investment Created', description: 'Your portfolio has been updated.' });
       load();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message ?? 'Failed to create investment.' });
     }
   };
 
@@ -97,7 +99,7 @@ export default function Investments() {
 
   const chartData = Object.entries(
     investments.filter(i => i.status === 'active').reduce<Record<string, number>>((acc, inv) => {
-      acc[inv.type] = (acc[inv.type] || 0) + inv.amount;
+      acc[inv.type] = (acc[inv.type] || 0) + Number(inv.amount);
       return acc;
     }, {})
   ).map(([name, value]) => ({ name: name.replace(/([A-Z])/g, ' $1').trim(), value }));
@@ -231,12 +233,12 @@ export default function Investments() {
                                 </Badge>
                               </div>
                               <p className="text-xs text-muted-foreground mt-1">
-                                {format(new Date(inv.created_at), 'MMM d, yyyy')}
+                                {format(new Date(inv.createdAt), 'MMM d, yyyy')}
                               </p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="font-mono font-bold text-lg">{formatCurrency(inv.amount)}</p>
+                            <p className="font-mono font-bold text-lg">{formatCurrency(Number(inv.amount))}</p>
                             <p className="text-sm text-emerald-500 font-medium">+{RETURN_RATES[inv.type] ?? 0}% APY</p>
                           </div>
                         </div>

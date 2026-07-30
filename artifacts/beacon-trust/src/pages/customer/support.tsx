@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -31,8 +31,8 @@ type Ticket = {
   description: string;
   status: string;
   priority: string;
-  staff_notes: string | null;
-  created_at: string;
+  staffNotes: string | null;
+  createdAt: string;
 };
 
 const statusColor = (s: string) => ({
@@ -48,7 +48,6 @@ export default function Support() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [isLoading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
 
   const form = useForm<FormVals>({
     resolver: zodResolver(ticketSchema),
@@ -58,30 +57,28 @@ export default function Support() {
   const load = async () => {
     if (!user) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from('support_tickets')
-      .select('id,subject,description,status,priority,staff_notes,created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (error) toast({ variant: 'destructive', title: 'Error', description: error.message });
-    setTickets((data ?? []) as Ticket[]);
+    try {
+      const data = await apiFetch<Ticket[]>('/api/support/tickets');
+      setTickets(data ?? []);
+    } catch { /* ignore */ }
     setLoading(false);
   };
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, [user?.id]);
+  useEffect(() => { load(); }, [user?.id]);
 
   const onSubmit = async (values: FormVals) => {
-    if (!user) return;
-    setSubmitting(true);
-    const { error } = await supabase.from('support_tickets').insert({
-      user_id: user.id, subject: values.subject, description: values.description,
-      priority: values.priority, status: 'open',
-    });
-    setSubmitting(false);
-    if (error) { toast({ variant: 'destructive', title: 'Error', description: error.message }); return; }
-    setOpen(false); form.reset();
-    toast({ title: 'Ticket created', description: 'Our concierge team will respond shortly.' });
-    load();
+    try {
+      await apiFetch('/api/support/tickets', {
+        method: 'POST',
+        body: JSON.stringify(values),
+      });
+      setOpen(false);
+      form.reset();
+      toast({ title: 'Ticket created', description: 'Our concierge team will respond shortly.' });
+      load();
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message ?? 'Failed to submit.' });
+    }
   };
 
   return (
@@ -116,15 +113,16 @@ export default function Support() {
                           <SelectItem value="high">High</SelectItem>
                           <SelectItem value="urgent">Urgent</SelectItem>
                         </SelectContent>
-                      </Select>
-                      <FormMessage />
+                      </Select><FormMessage />
                     </FormItem>
                   )} />
                   <FormField control={form.control} name="description" render={({ field }) => (
                     <FormItem><FormLabel>Details</FormLabel><FormControl><Textarea placeholder="How can we assist?" className="min-h-[120px]" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <div className="pt-2 flex justify-end">
-                    <Button type="submit" disabled={submitting}>{submitting ? 'Sending…' : 'Send Secure Message'}</Button>
+                    <Button type="submit" disabled={form.formState.isSubmitting}>
+                      {form.formState.isSubmitting ? 'Sending…' : 'Send Secure Message'}
+                    </Button>
                   </div>
                 </form>
               </Form>
@@ -142,20 +140,20 @@ export default function Support() {
                   <div className="flex justify-between items-start gap-4">
                     <div>
                       <CardTitle className="text-lg flex items-center gap-2"><MessageSquare className="h-4 w-4 text-primary" /> {t.subject}</CardTitle>
-                      <p className="text-xs text-muted-foreground font-mono mt-2">TK-{t.id.slice(0, 8).toUpperCase()} • {format(new Date(t.created_at), 'MMM dd, yyyy')}</p>
+                      <p className="text-xs text-muted-foreground font-mono mt-2">TK-{t.id.slice(0, 8).toUpperCase()} • {format(new Date(t.createdAt), 'MMM dd, yyyy')}</p>
                     </div>
                     <Badge className={statusColor(t.status)} variant="outline">{t.status.toUpperCase()}</Badge>
                   </div>
                 </CardHeader>
                 <CardContent className="pt-4">
                   <p className="text-sm leading-relaxed whitespace-pre-wrap">{t.description}</p>
-                  {t.staff_notes && (
+                  {t.staffNotes && (
                     <div className="mt-6 p-4 bg-primary/5 border border-primary/20 rounded-lg">
                       <div className="flex items-center gap-2 mb-2">
                         <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-xs font-bold">BT</div>
                         <span className="text-sm font-bold text-primary">Beacon Trust Team</span>
                       </div>
-                      <p className="text-sm text-foreground/90 italic">{t.staff_notes}</p>
+                      <p className="text-sm text-foreground/90 italic">{t.staffNotes}</p>
                     </div>
                   )}
                 </CardContent>

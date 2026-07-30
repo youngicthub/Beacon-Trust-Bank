@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -13,10 +13,9 @@ import { z } from 'zod';
 import { useToast } from '@/hooks/use-toast';
 
 const profileSchema = z.object({
-  first_name: z.string().min(2, 'First name required'),
-  last_name: z.string().min(2, 'Last name required'),
+  firstName: z.string().min(2, 'First name required'),
+  lastName: z.string().min(2, 'Last name required'),
   phone: z.string().min(7, 'Valid phone required'),
-  address: z.string().optional(),
 });
 
 const passwordSchema = z.object({
@@ -33,7 +32,7 @@ export default function Profile() {
 
   const profileForm = useForm<z.infer<typeof profileSchema>>({
     resolver: zodResolver(profileSchema),
-    defaultValues: { first_name: '', last_name: '', phone: '', address: '' },
+    defaultValues: { firstName: '', lastName: '', phone: '' },
   });
 
   const passwordForm = useForm<z.infer<typeof passwordSchema>>({
@@ -44,39 +43,35 @@ export default function Profile() {
   useEffect(() => {
     if (user) {
       profileForm.reset({
-        first_name: user.firstName || '',
-        last_name: user.lastName || '',
+        firstName: user.firstName || '',
+        lastName: user.lastName || '',
         phone: user.phone || '',
-        address: (user as any).address || '',
       });
     }
   }, [user]);
 
   const onProfileSubmit = async (data: z.infer<typeof profileSchema>) => {
-    if (!user) return;
-    const { error } = await supabase
-      .from('users')
-      .update({
-        first_name: data.first_name,
-        last_name: data.last_name,
-        phone: data.phone,
-        address: data.address || null,
-      })
-      .eq('id', user.id);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to update profile.' });
-    } else {
+    try {
+      await apiFetch('/api/profile', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      });
       toast({ title: 'Profile Updated', description: 'Your personal information has been saved.' });
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to update profile.' });
     }
   };
 
   const onPasswordSubmit = async (data: z.infer<typeof passwordSchema>) => {
-    const { error } = await supabase.auth.updateUser({ password: data.newPassword });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: error.message });
-    } else {
+    try {
+      await apiFetch('/api/profile/password', {
+        method: 'PATCH',
+        body: JSON.stringify({ newPassword: data.newPassword }),
+      });
       passwordForm.reset();
       toast({ title: 'Security Updated', description: 'Your password has been changed successfully.' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Error', description: err.message ?? 'Failed to update password.' });
     }
   };
 
@@ -112,19 +107,11 @@ export default function Profile() {
               <Form {...profileForm}>
                 <form onSubmit={profileForm.handleSubmit(onProfileSubmit)} className="space-y-4">
                   <div className="grid grid-cols-2 gap-4">
-                    <FormField control={profileForm.control} name="first_name" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>First Name</FormLabel>
-                        <FormControl><Input {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
+                    <FormField control={profileForm.control} name="firstName" render={({ field }) => (
+                      <FormItem><FormLabel>First Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
-                    <FormField control={profileForm.control} name="last_name" render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Last Name</FormLabel>
-                        <FormControl><Input {...field} /></FormControl>
-                        <FormMessage />
-                      </FormItem>
+                    <FormField control={profileForm.control} name="lastName" render={({ field }) => (
+                      <FormItem><FormLabel>Last Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>
                     )} />
                   </div>
                   <div className="space-y-2">
@@ -133,18 +120,7 @@ export default function Profile() {
                     <p className="text-xs text-muted-foreground">Email cannot be changed directly for security reasons.</p>
                   </div>
                   <FormField control={profileForm.control} name="phone" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Phone Number</FormLabel>
-                      <FormControl><Input {...field} className="font-mono" /></FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )} />
-                  <FormField control={profileForm.control} name="address" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Residential Address</FormLabel>
-                      <FormControl><Input {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
+                    <FormItem><FormLabel>Phone Number</FormLabel><FormControl><Input {...field} className="font-mono" /></FormControl><FormMessage /></FormItem>
                   )} />
                   <div className="pt-4">
                     <Button type="submit" disabled={profileForm.formState.isSubmitting}>
@@ -165,18 +141,10 @@ export default function Profile() {
               <Form {...passwordForm}>
                 <form onSubmit={passwordForm.handleSubmit(onPasswordSubmit)} className="space-y-4">
                   <FormField control={passwordForm.control} name="newPassword" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>New Password</FormLabel>
-                      <FormControl><Input type="password" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
+                    <FormItem><FormLabel>New Password</FormLabel><FormControl><Input type="password" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <FormField control={passwordForm.control} name="confirmPassword" render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Confirm New Password</FormLabel>
-                      <FormControl><Input type="password" {...field} /></FormControl>
-                      <FormMessage />
-                    </FormItem>
+                    <FormItem><FormLabel>Confirm New Password</FormLabel><FormControl><Input type="password" {...field} /></FormControl><FormMessage /></FormItem>
                   )} />
                   <div className="pt-4">
                     <Button type="submit" variant="destructive" disabled={passwordForm.formState.isSubmitting}>

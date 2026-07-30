@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -14,8 +14,8 @@ type NotifRow = {
   title: string;
   message: string;
   type: string;
-  is_read: boolean;
-  created_at: string;
+  isRead: boolean;
+  createdAt: string;
 };
 
 export default function Notifications() {
@@ -29,12 +29,12 @@ export default function Notifications() {
   const load = async () => {
     if (!user) return;
     setIsLoading(true);
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('id, title, message, type, is_read, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    if (!error) setNotifications((data ?? []) as NotifRow[]);
+    try {
+      const data = await apiFetch<NotifRow[]>('/api/notifications');
+      setNotifications(data ?? []);
+    } catch {
+      // silent — empty list on error
+    }
     setIsLoading(false);
   };
 
@@ -42,16 +42,22 @@ export default function Notifications() {
 
   const handleMarkRead = async (id: string) => {
     setMarkingId(id);
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
-    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    try {
+      await apiFetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+      setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    } catch { /* ignore */ }
     setMarkingId(null);
   };
 
   const handleMarkAllRead = async () => {
     if (!user) return;
     setMarkingAll(true);
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    try {
+      await apiFetch('/api/notifications/read-all', { method: 'PATCH' });
+      setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to mark all as read.' });
+    }
     setMarkingAll(false);
   };
 
@@ -65,7 +71,7 @@ export default function Notifications() {
     }
   };
 
-  const unreadCount = notifications.filter(n => !n.is_read).length;
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
     <DashboardLayout>
@@ -95,24 +101,24 @@ export default function Notifications() {
             {notifications.map((note) => (
               <Card
                 key={note.id}
-                className={`p-4 border-border/50 transition-all ${note.is_read ? 'bg-background opacity-70' : 'bg-card border-l-4 border-l-primary shadow-sm'}`}
+                className={`p-4 border-border/50 transition-all ${note.isRead ? 'bg-background opacity-70' : 'bg-card border-l-4 border-l-primary shadow-sm'}`}
               >
                 <div className="flex items-start gap-4">
-                  <div className={`mt-1 p-2 rounded-full ${note.is_read ? 'bg-muted' : 'bg-primary/10'}`}>
+                  <div className={`mt-1 p-2 rounded-full ${note.isRead ? 'bg-muted' : 'bg-primary/10'}`}>
                     {getIcon(note.type)}
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between items-start gap-4">
-                      <h3 className={`font-bold ${note.is_read ? 'text-muted-foreground' : 'text-foreground'}`}>{note.title}</h3>
+                      <h3 className={`font-bold ${note.isRead ? 'text-muted-foreground' : 'text-foreground'}`}>{note.title}</h3>
                       <span className="text-xs font-mono text-muted-foreground whitespace-nowrap">
-                        {format(new Date(note.created_at), 'MMM dd, HH:mm')}
+                        {format(new Date(note.createdAt), 'MMM dd, HH:mm')}
                       </span>
                     </div>
-                    <p className={`text-sm mt-1 leading-relaxed ${note.is_read ? 'text-muted-foreground' : 'text-foreground/90'}`}>
+                    <p className={`text-sm mt-1 leading-relaxed ${note.isRead ? 'text-muted-foreground' : 'text-foreground/90'}`}>
                       {note.message}
                     </p>
                   </div>
-                  {!note.is_read && (
+                  {!note.isRead && (
                     <Button
                       variant="ghost"
                       size="sm"

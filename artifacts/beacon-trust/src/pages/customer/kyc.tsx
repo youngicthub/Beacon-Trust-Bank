@@ -1,14 +1,14 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
-import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { ShieldCheck, ShieldAlert, Clock, AlertTriangle, Upload, X, CheckCircle2, ChevronRight, ChevronLeft, User, FileText, Camera, RefreshCw } from '@/lib/icons';
+import { ShieldCheck, ShieldAlert, Clock, AlertTriangle, Upload, X, CheckCircle2, ChevronRight, ChevronLeft, User, FileText, Camera } from '@/lib/icons';
 import { useToast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
 import { cn } from '@/lib/utils';
@@ -86,10 +86,10 @@ function ImageDropzone({ label, value, onChange, required }: {
 
 type KycRecord = {
   status: string;
-  document_type: string;
-  created_at: string;
-  reviewed_at: string | null;
-  rejection_reason: string | null;
+  documentType: string;
+  createdAt: string;
+  reviewedAt: string | null;
+  rejectionReason: string | null;
 };
 
 export default function Kyc() {
@@ -110,29 +110,23 @@ export default function Kyc() {
     if (!user) return;
     const load = async () => {
       setIsLoading(true);
-      const { data } = await supabase
-        .from('kyc_records')
-        .select('status, document_type, created_at, reviewed_at, rejection_reason')
-        .eq('user_id', user.id)
-        .maybeSingle();
-      setKycRecord(data as KycRecord | null);
+      try {
+        const data = await apiFetch<KycRecord | null>('/api/kyc');
+        setKycRecord(data);
+      } catch { /* ignore */ }
       setIsLoading(false);
     };
     load();
   }, [user?.id]);
 
   const next = () => {
-    if (step === 1) {
-      if (!formData.fullName || !formData.dateOfBirth) {
-        toast({ variant: 'destructive', title: 'Missing fields', description: 'Please fill in all required fields.' });
-        return;
-      }
+    if (step === 1 && (!formData.fullName || !formData.dateOfBirth)) {
+      toast({ variant: 'destructive', title: 'Missing fields', description: 'Please fill in all required fields.' });
+      return;
     }
-    if (step === 2) {
-      if (!formData.documentType || !formData.documentNumber) {
-        toast({ variant: 'destructive', title: 'Missing fields', description: 'Please fill in document details.' });
-        return;
-      }
+    if (step === 2 && (!formData.documentType || !formData.documentNumber)) {
+      toast({ variant: 'destructive', title: 'Missing fields', description: 'Please fill in document details.' });
+      return;
     }
     setStep(s => s + 1);
   };
@@ -144,25 +138,26 @@ export default function Kyc() {
     }
     if (!user) return;
     setSubmitting(true);
-    const { error } = await supabase.from('kyc_records').insert({
-      user_id: user.id,
-      full_name: formData.fullName,
-      date_of_birth: formData.dateOfBirth,
-      nationality: formData.nationality || null,
-      address: formData.address || null,
-      document_type: formData.documentType as any,
-      document_number: formData.documentNumber,
-      document_front_image: frontImage,
-      document_back_image: backImage || null,
-      status: 'pending',
-    });
-    setSubmitting(false);
-    if (error) {
-      toast({ variant: 'destructive', title: 'Submission Failed', description: error.message });
-    } else {
+    try {
+      await apiFetch('/api/kyc', {
+        method: 'POST',
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          dateOfBirth: formData.dateOfBirth,
+          nationality: formData.nationality || null,
+          address: formData.address || null,
+          documentType: formData.documentType,
+          documentNumber: formData.documentNumber,
+          documentFrontImage: frontImage,
+          documentBackImage: backImage || null,
+        }),
+      });
       toast({ title: 'Submitted!', description: 'Your documents are under review.' });
-      setKycRecord({ status: 'pending', document_type: formData.documentType, created_at: new Date().toISOString(), reviewed_at: null, rejection_reason: null });
+      setKycRecord({ status: 'pending', documentType: formData.documentType, createdAt: new Date().toISOString(), reviewedAt: null, rejectionReason: null });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Submission Failed', description: err.message ?? 'Please try again.' });
     }
+    setSubmitting(false);
   };
 
   if (isLoading) {
@@ -190,8 +185,8 @@ export default function Kyc() {
               <h2 className="text-xl font-bold mb-2">{cfg.label}</h2>
               <p className="text-muted-foreground mb-4">{cfg.desc}</p>
               <div className="text-sm text-muted-foreground space-y-1">
-                <p>Submitted: {format(new Date(kycRecord.created_at), 'MMM d, yyyy')}</p>
-                {kycRecord.reviewed_at && <p>Reviewed: {format(new Date(kycRecord.reviewed_at), 'MMM d, yyyy')}</p>}
+                <p>Submitted: {format(new Date(kycRecord.createdAt), 'MMM d, yyyy')}</p>
+                {kycRecord.reviewedAt && <p>Reviewed: {format(new Date(kycRecord.reviewedAt), 'MMM d, yyyy')}</p>}
               </div>
             </CardContent>
           </Card>
@@ -213,12 +208,11 @@ export default function Kyc() {
             <AlertTriangle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
             <div>
               <p className="font-semibold text-destructive">Previous submission rejected</p>
-              {kycRecord.rejection_reason && <p className="text-sm text-destructive/80 mt-0.5">{kycRecord.rejection_reason}</p>}
+              {kycRecord.rejectionReason && <p className="text-sm text-destructive/80 mt-0.5">{kycRecord.rejectionReason}</p>}
             </div>
           </div>
         )}
 
-        {/* Step indicators */}
         <div className="flex items-center gap-2">
           {STEPS.map((s, i) => {
             const Icon = s.icon;
@@ -244,26 +238,13 @@ export default function Kyc() {
               <>
                 <h2 className="font-semibold text-lg">Personal Information</h2>
                 <div className="space-y-3">
-                  <div>
-                    <Label>Full Legal Name <span className="text-destructive">*</span></Label>
-                    <Input value={formData.fullName} onChange={e => setFormData(p => ({ ...p, fullName: e.target.value }))} placeholder="As it appears on your ID" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Date of Birth <span className="text-destructive">*</span></Label>
-                    <Input type="date" value={formData.dateOfBirth} onChange={e => setFormData(p => ({ ...p, dateOfBirth: e.target.value }))} className="mt-1 font-mono" />
-                  </div>
-                  <div>
-                    <Label>Nationality</Label>
-                    <Input value={formData.nationality} onChange={e => setFormData(p => ({ ...p, nationality: e.target.value }))} placeholder="e.g. United States" className="mt-1" />
-                  </div>
-                  <div>
-                    <Label>Residential Address</Label>
-                    <Input value={formData.address} onChange={e => setFormData(p => ({ ...p, address: e.target.value }))} placeholder="Full address" className="mt-1" />
-                  </div>
+                  <div><Label>Full Legal Name <span className="text-destructive">*</span></Label><Input value={formData.fullName} onChange={e => setFormData(p => ({ ...p, fullName: e.target.value }))} placeholder="As it appears on your ID" className="mt-1" /></div>
+                  <div><Label>Date of Birth <span className="text-destructive">*</span></Label><Input type="date" value={formData.dateOfBirth} onChange={e => setFormData(p => ({ ...p, dateOfBirth: e.target.value }))} className="mt-1 font-mono" /></div>
+                  <div><Label>Nationality</Label><Input value={formData.nationality} onChange={e => setFormData(p => ({ ...p, nationality: e.target.value }))} placeholder="e.g. United States" className="mt-1" /></div>
+                  <div><Label>Residential Address</Label><Input value={formData.address} onChange={e => setFormData(p => ({ ...p, address: e.target.value }))} placeholder="Full address" className="mt-1" /></div>
                 </div>
               </>
             )}
-
             {step === 2 && (
               <>
                 <h2 className="font-semibold text-lg">Document Details</h2>
@@ -272,19 +253,13 @@ export default function Kyc() {
                     <Label>Document Type <span className="text-destructive">*</span></Label>
                     <Select value={formData.documentType} onValueChange={v => setFormData(p => ({ ...p, documentType: v }))}>
                       <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {DOC_TYPES.map(dt => <SelectItem key={dt.value} value={dt.value}>{dt.label}</SelectItem>)}
-                      </SelectContent>
+                      <SelectContent>{DOC_TYPES.map(dt => <SelectItem key={dt.value} value={dt.value}>{dt.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Document Number <span className="text-destructive">*</span></Label>
-                    <Input value={formData.documentNumber} onChange={e => setFormData(p => ({ ...p, documentNumber: e.target.value }))} placeholder="Exact number on document" className="mt-1 font-mono uppercase" />
-                  </div>
+                  <div><Label>Document Number <span className="text-destructive">*</span></Label><Input value={formData.documentNumber} onChange={e => setFormData(p => ({ ...p, documentNumber: e.target.value }))} placeholder="Exact number on document" className="mt-1 font-mono uppercase" /></div>
                 </div>
               </>
             )}
-
             {step === 3 && (
               <>
                 <h2 className="font-semibold text-lg">Upload Document Images</h2>

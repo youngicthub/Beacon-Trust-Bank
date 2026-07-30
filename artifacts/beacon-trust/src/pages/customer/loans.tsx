@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { DashboardLayout } from '@/components/layout/dashboard-layout';
-import { supabase } from '@/integrations/supabase/client';
+import { apiFetch } from '@/lib/api';
 import { useAuth } from '@/hooks/use-auth';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -21,18 +21,18 @@ type LoanRow = {
   id: string;
   type: string;
   status: string;
-  amount: number;
-  interest_rate: number;
-  tenure_months: number;
-  emi_amount: number | null;
+  amount: string;
+  interestRate: string;
+  tenureMonths: number;
+  emiAmount: string | null;
   purpose: string | null;
-  created_at: string;
+  createdAt: string;
 };
 
 const applySchema = z.object({
   type: z.enum(['personal', 'home', 'auto', 'education', 'business']),
   amount: z.coerce.number().positive(),
-  tenure_months: z.coerce.number().positive(),
+  tenureMonths: z.coerce.number().positive(),
   purpose: z.string().min(5),
 });
 
@@ -53,58 +53,37 @@ export default function LoansPortal() {
 
   const applyForm = useForm<z.infer<typeof applySchema>>({
     resolver: zodResolver(applySchema),
-    defaultValues: { type: 'personal', amount: 0, tenure_months: 12, purpose: '' },
+    defaultValues: { type: 'personal', amount: 0, tenureMonths: 12, purpose: '' },
   });
 
   const calcForm = useForm({
     defaultValues: { amount: 100000, interest_rate: 6.5, tenure_months: 120 },
   });
 
-  useEffect(() => {
+  const loadLoans = async () => {
     if (!user) return;
-    const load = async () => {
-      setIsLoading(true);
-      const { data } = await supabase
-        .from('loans')
-        .select('id, type, status, amount, interest_rate, tenure_months, emi_amount, purpose, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      setLoans((data ?? []) as LoanRow[]);
-      setIsLoading(false);
-    };
-    load();
-  }, [user?.id]);
+    setIsLoading(true);
+    try {
+      const data = await apiFetch<LoanRow[]>('/api/loans');
+      setLoans(data ?? []);
+    } catch { /* ignore */ }
+    setIsLoading(false);
+  };
+
+  useEffect(() => { loadLoans(); }, [user?.id]);
 
   const onApply = async (data: z.infer<typeof applySchema>) => {
     if (!user) return;
-    const interestRate = 8.5; // Default rate
-    const monthlyRate = interestRate / 100 / 12;
-    const emi = (data.amount * monthlyRate * Math.pow(1 + monthlyRate, data.tenure_months)) /
-      (Math.pow(1 + monthlyRate, data.tenure_months) - 1);
-
-    const { error } = await supabase.from('loans').insert({
-      user_id: user.id,
-      type: data.type,
-      amount: data.amount,
-      interest_rate: interestRate,
-      tenure_months: data.tenure_months,
-      purpose: data.purpose,
-      status: 'pending',
-      emi_amount: Math.round(emi * 100) / 100,
-      outstanding_amount: data.amount,
-    });
-    if (error) {
-      toast({ variant: 'destructive', title: 'Error', description: 'Failed to submit application.' });
-    } else {
+    try {
+      await apiFetch('/api/loans', {
+        method: 'POST',
+        body: JSON.stringify({ type: data.type, amount: data.amount, tenureMonths: data.tenureMonths, purpose: data.purpose }),
+      });
       applyForm.reset();
       toast({ title: 'Application Submitted', description: 'Your loan application is under review.' });
-      // Reload
-      const { data: updated } = await supabase
-        .from('loans')
-        .select('id, type, status, amount, interest_rate, tenure_months, emi_amount, purpose, created_at')
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
-      setLoans((updated ?? []) as LoanRow[]);
+      loadLoans();
+    } catch {
+      toast({ variant: 'destructive', title: 'Error', description: 'Failed to submit application.' });
     }
   };
 
@@ -150,18 +129,18 @@ export default function LoansPortal() {
                       <div className="flex flex-col sm:flex-row justify-between items-start gap-4">
                         <div>
                           <div className="flex items-center gap-2 mb-1">
-                            <span className="font-bold text-xl">{formatCurrency(loan.amount)}</span>
+                            <span className="font-bold text-xl">{formatCurrency(Number(loan.amount))}</span>
                             <Badge variant="outline" className="uppercase text-[10px]">{loan.type}</Badge>
                             <Badge className={`text-[10px] border capitalize ${statusColor(loan.status)}`}>{loan.status}</Badge>
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            {loan.interest_rate}% APR · {loan.tenure_months} months
-                            {loan.emi_amount && ` · EMI ${formatCurrency(loan.emi_amount)}/mo`}
+                            {loan.interestRate}% APR · {loan.tenureMonths} months
+                            {loan.emiAmount && ` · EMI ${formatCurrency(Number(loan.emiAmount))}/mo`}
                           </p>
                           {loan.purpose && <p className="text-xs text-muted-foreground mt-1">{loan.purpose}</p>}
                         </div>
                         <span className="text-xs text-muted-foreground whitespace-nowrap">
-                          {format(new Date(loan.created_at), 'MMM d, yyyy')}
+                          {format(new Date(loan.createdAt), 'MMM d, yyyy')}
                         </span>
                       </div>
                     </CardContent>
@@ -179,9 +158,7 @@ export default function LoansPortal() {
 
           <TabsContent value="apply" className="mt-6">
             <Card className="border-border/50 shadow-sm max-w-xl">
-              <CardHeader>
-                <CardTitle>Loan Application</CardTitle>
-              </CardHeader>
+              <CardHeader><CardTitle>Loan Application</CardTitle></CardHeader>
               <CardContent>
                 <Form {...applyForm}>
                   <form onSubmit={applyForm.handleSubmit(onApply)} className="space-y-4">
@@ -208,7 +185,7 @@ export default function LoansPortal() {
                         <FormMessage />
                       </FormItem>
                     )} />
-                    <FormField control={applyForm.control} name="tenure_months" render={({ field }) => (
+                    <FormField control={applyForm.control} name="tenureMonths" render={({ field }) => (
                       <FormItem>
                         <FormLabel>Tenure (Months)</FormLabel>
                         <FormControl><Input type="number" {...field} className="font-mono" /></FormControl>
