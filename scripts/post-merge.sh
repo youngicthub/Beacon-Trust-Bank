@@ -2,3 +2,4 @@
 set -e
 npm install
 npm run push -w @workspace/db
+node scripts/seed-admin.mjs
