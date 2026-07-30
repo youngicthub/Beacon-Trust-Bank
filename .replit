@@ -59,6 +59,14 @@ timeoutMs = 20000
 [userenv]
 
 [userenv.shared]
+PORT = "3001"
+SUPABASE_PROJECT_ID = "whgvtjuolegzqninurqm"
+SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndoZ3Z0anVvbGVnenFuaW51cnFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0ODk5NzUsImV4cCI6MjEwMDA2NTk3NX0.QAFGqPKNg7C8wBpLKORUrkYoRwagSgpbeTdjOR3E8sk"
+SUPABASE_URL = "https://whgvtjuolegzqninurqm.supabase.co"
+VITE_API_URL = ""
+VITE_SUPABASE_PROJECT_ID = "whgvtjuolegzqninurqm"
+VITE_SUPABASE_PUBLISHABLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndoZ3Z0anVvbGVnenFuaW51cnFtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODQ0ODk5NzUsImV4cCI6MjEwMDA2NTk3NX0.QAFGqPKNg7C8wBpLKORUrkYoRwagSgpbeTdjOR3E8sk"
+VITE_SUPABASE_URL = "https://whgvtjuolegzqninurqm.supabase.co"
 
 [nix]
 channel = "stable-25_05"
