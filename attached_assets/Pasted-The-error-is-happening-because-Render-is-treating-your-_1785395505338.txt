@@ -1,0 +1,192 @@
+The error is happening because Render is treating your workspace package @workspace/db as an external npm package instead of a local monorepo package.
+
+Your project is a pnpm workspace (9 projects), and api-server depends on something like:
+
+"@workspace/db": "workspace:*"
+
+or
+
+"@workspace/db": "^1.0.0"
+
+During Render build, pnpm cannot find @workspace/db locally, so it tries:
+
+https://registry.npmjs.org/@workspace%2Fdb
+
+and gets:
+
+404 Not Found
+
+because @workspace/db does not exist on npm.
+
+Step 1 — Check your workspace structure
+
+Your repo should look something like:
+
+Beacon-Trust-Bank/
+│
+├── pnpm-workspace.yaml
+├── package.json
+├── pnpm-lock.yaml
+│
+└── artifacts/
+    ├── api-server/
+    │   └── package.json
+    │
+    ├── db/
+    │   └── package.json
+    │
+    └── web/
+
+You need:
+
+artifacts/db/package.json
+
+with:
+
+{
+  "name": "@workspace/db",
+  "version": "1.0.0"
+}
+Step 2 — Fix pnpm-workspace.yaml
+
+Open:
+
+pnpm-workspace.yaml
+
+Make sure it contains:
+
+packages:
+  - "artifacts/*"
+
+Example:
+
+packages:
+  - artifacts/api-server
+  - artifacts/db
+  - artifacts/web
+
+Commit this.
+
+Step 3 — Fix api-server package.json
+
+Open:
+
+artifacts/api-server/package.json
+
+Find:
+
+"dependencies": {
+  "@workspace/db": "..."
+}
+
+Change it to:
+
+"dependencies": {
+  "@workspace/db": "workspace:*"
+}
+
+Example:
+
+{
+  "dependencies": {
+    "@workspace/db": "workspace:*",
+    "express": "^5.0.0"
+  }
+}
+Step 4 — Regenerate lock file locally
+
+On your machine:
+
+rm -rf node_modules
+rm pnpm-lock.yaml
+
+Then:
+
+corepack enable
+pnpm install
+
+Check:
+
+pnpm list --depth -1
+
+You should see:
+
+@workspace/db
+@workspace/api-server
+Step 5 — Commit changes
+git add .
+git commit -m "Fix pnpm workspace dependency for Render"
+git push origin main
+Step 6 — Update Render Build Command
+
+Your current command:
+
+corepack enable && pnpm install && pnpm run build -w @workspace/api-server
+
+Change it to:
+
+corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
+
+This tells pnpm:
+
+"Build the workspace package, not an npm package."
+
+Step 7 — Add Render Root Directory
+
+In Render:
+
+Service → Settings → Build & Deploy
+
+Set:
+
+Root Directory
+.
+
+Not:
+
+artifacts/api-server
+
+because if Render starts inside api-server, it cannot see:
+
+artifacts/db
+pnpm-workspace.yaml
+Step 8 — If db package is missing
+
+If your repo does not have:
+
+artifacts/db
+
+then create it:
+
+artifacts/db/package.json
+
+Add:
+
+{
+  "name": "@workspace/db",
+  "version": "1.0.0",
+  "main": "index.js",
+  "type": "module"
+}
+
+and create:
+
+artifacts/db/index.js
+
+Example:
+
+export {};
+
+Then later put your database connection/schema there.
+
+Final Render configuration
+Build Command
+corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server build
+Start Command
+
+Probably:
+
+pnpm --filter @workspace/api-server start
+
+Your issue is not Node 22, pnpm 11, or Render.
+It is a broken pnpm workspace dependency resolution where Render cannot see the local @workspace/db package. Once the workspace paths and package name match, the build will pass.
