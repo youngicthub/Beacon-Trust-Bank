@@ -8,13 +8,13 @@ router = "path"
 [[services]]
 name = "web"
 paths = [ "/" ]
-localPort = 22105
+localPort = 5173
 
 [services.development]
-run = "pnpm --filter @workspace/beacon-trust run dev"
+run = "npm run dev -w @workspace/beacon-trust"
 
 [services.production]
-build = [ "pnpm", "--filter", "@workspace/beacon-trust", "run", "build" ]
+build = [ "npm", "run", "build", "--workspace=@workspace/beacon-trust" ]
 serve = "static"
 publicDir = "artifacts/beacon-trust/dist/public"
 
@@ -23,5 +23,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "22105"
+PORT = "5173"
 BASE_PATH = "/"
