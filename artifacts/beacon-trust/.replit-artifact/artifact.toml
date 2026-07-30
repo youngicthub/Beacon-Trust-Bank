@@ -11,12 +11,12 @@ paths = [ "/" ]
 localPort = 22105
 
 [services.development]
-run = "npm run dev -w @workspace/beacon-trust"
+run = "pnpm --filter @workspace/beacon-trust run dev"
 
 [services.production]
-build = [ "npm", "run", "build", "--workspace=@workspace/beacon-trust" ]
+build = [ "pnpm", "--filter", "@workspace/beacon-trust", "run", "build" ]
 serve = "static"
-publicDir = "artifacts/beacon-trust/dist"
+publicDir = "artifacts/beacon-trust/dist/public"
 
 [[services.production.rewrites]]
 from = "/*"
