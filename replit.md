@@ -4,6 +4,39 @@ A full-stack digital private banking app with a public marketing site, customer 
 
 ---
 
+## Running on Replit
+
+### Required secrets
+
+Set these in the Replit Secrets panel (the lock icon in the sidebar):
+
+| Secret | Notes |
+|---|---|
+| `JWT_SECRET` | Any long random string — used to sign API session tokens |
+
+The following are already set in `.env` and do not need to be added as secrets:
+- `VITE_SUPABASE_URL` / `VITE_SUPABASE_PUBLISHABLE_KEY` — Supabase project credentials
+- `SESSION_SECRET` — Express session secret
+- `DATABASE_URL` — auto-injected by Replit; do not set this manually
+
+### One-time setup
+
+```bash
+npm install                      # install all workspace dependencies
+npm run push -w @workspace/db    # push Drizzle schema to the Replit PostgreSQL database
+```
+
+### Run
+
+Start both servers together with the **Project** workflow (the Run button), or individually:
+
+```bash
+npm run dev          # Beacon Trust frontend — Vite on $PORT (default 5173)
+npm run dev:api      # API server — Express on $PORT (default 3001)
+```
+
+---
+
 ## Local development (outside Replit)
 
 ### One-time setup
